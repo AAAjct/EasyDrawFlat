@@ -425,6 +425,17 @@ def line_label_rect(data):
 
 
 def draw_element(p, data, min_stroke=0):
+    opacity = data.get("opacity", 1)
+    if opacity == 1:
+        draw_element_body(p, data, min_stroke)
+        return
+    p.save()
+    p.setOpacity(p.opacity() * opacity)
+    draw_element_body(p, data, min_stroke)
+    p.restore()
+
+
+def draw_element_body(p, data, min_stroke):
     d = data
     if d["kind"] == "group":
         p.save()
@@ -649,7 +660,10 @@ class PlanItem(QGraphicsObject):
         if d["kind"] == "legend_box":
             rows = self.window.doc["legend"]
             if rows:
+                p.save()
+                p.setOpacity(p.opacity() * d.get("opacity", 1))
                 draw_legend_box(p, d, rows)
+                p.restore()
         else:
             draw_element(p, d)
         if (d["kind"] == "path" and (d.get("handles") or d.get("edge_handles")) and self.isSelected()
@@ -1596,13 +1610,39 @@ class PlanView(QGraphicsView):
         return super().viewportEvent(e)
 
     def dragEnterEvent(self, e):
-        self.window.dragEnterEvent(e)
+        if FacilityShortcuts.facility_key(e.mimeData()):
+            e.acceptProposedAction()
+        else:
+            self.window.dragEnterEvent(e)
 
     def dragMoveEvent(self, e):
-        self.window.dragEnterEvent(e)
+        if FacilityShortcuts.facility_key(e.mimeData()):
+            e.setAccepted(PAPER.contains(self.mapToScene(e.position().toPoint())))
+        else:
+            self.window.dragEnterEvent(e)
 
     def dropEvent(self, e):
-        self.window.dropEvent(e)
+        kind = FacilityShortcuts.facility_key(e.mimeData())
+        if not kind:
+            self.window.dropEvent(e)
+            return
+        raw = self.mapToScene(e.position().toPoint())
+        if PAPER.contains(raw):
+            pos = self.window.snap(raw)
+            data = self.window.styled_element(kind, pos.x(), pos.y(), *FACILITY_SIZES[kind])
+            if self.window.add(data):
+                e.acceptProposedAction()
+                return
+        e.ignore()
+
+
+def drag_facility(source, kind, icon):
+    mime = QMimeData()
+    mime.setData(FACILITY_MIME, kind.encode("utf-8"))
+    drag = QDrag(source)
+    drag.setMimeData(mime)
+    drag.setPixmap(icon.pixmap(48, 48))
+    drag.exec(Qt.DropAction.CopyAction)
 
 
 class FacilityList(QListWidget):
@@ -1610,12 +1650,30 @@ class FacilityList(QListWidget):
         item = self.currentItem()
         if item is None:
             return
-        mime = QMimeData()
-        mime.setData(FACILITY_MIME, item.data(Qt.ItemDataRole.UserRole).encode("utf-8"))
-        drag = QDrag(self)
-        drag.setMimeData(mime)
-        drag.setPixmap(item.icon().pixmap(48, 48))
-        drag.exec(Qt.DropAction.CopyAction)
+        drag_facility(self, item.data(Qt.ItemDataRole.UserRole), item.icon())
+
+
+class FacilityShortcutButton(QPushButton):
+    press_pos = None
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.press_pos = None
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self.press_pos is not None and event.buttons() & Qt.MouseButton.LeftButton and
+                (event.position().toPoint() - self.press_pos).manhattanLength() >= QApplication.startDragDistance()):
+            self.press_pos = None
+            self.setDown(False)
+            drag_facility(self, self.property("iconKind"), self.icon())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
 
 
 class FacilityShortcuts(QFrame):
@@ -1739,8 +1797,8 @@ class MainWindow(QMainWindow):
         self.update_title()
         self.apply_theme(self.dark_mode.isChecked())
 
-    def button(self, text, callback, kind=None, shortcut=None, bar=False):
-        b = QPushButton(text)
+    def button(self, text, callback, kind=None, shortcut=None, bar=False, button_type=QPushButton):
+        b = button_type(text)
         b.setProperty("barButton", bar)
         if kind:
             b.setProperty("iconKind", kind)
@@ -1773,7 +1831,6 @@ class MainWindow(QMainWindow):
         more = self.button("更多", lambda: None, bar=True)
         menu = QMenu(more)
         for label, callback in [("批量保存", self.save_all), ("批量导出", self.export_all),
-                                ("载入文件名标注", self.add_file_name_label),
                                 ("快捷键一览", self.show_shortcuts), ("恢复布局", self.restore_workspace)]:
             menu.addAction(label, callback)
         more.setMenu(menu)
@@ -1796,13 +1853,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tabs)
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(20, 6, 20, 6)
-        toolbar.setSpacing(12)
+        toolbar.setSpacing(8)
         self.title_edit = QLineEdit(self.doc["title"])
-        self.title_edit.setFixedWidth(200)
+        self.title_edit.setMinimumWidth(120)
+        self.title_edit.setMaximumWidth(200)
         self.title_edit.setPlaceholderText("图纸名称")
         self.title_edit.editingFinished.connect(self.rename)
         toolbar.addWidget(self.title_edit)
-        toolbar.addWidget(self.button("撤销", self.undo, shortcut="Ctrl+Z", bar=True))
+        toolbar.addWidget(self.button("撤销", self.undo, shortcut="Ctrl+Z"))
         redo_action = QAction(self)
         redo_action.setShortcut("Ctrl+Y")
         redo_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -1842,9 +1900,19 @@ class MainWindow(QMainWindow):
         self.no_stroke_button = self.button("无描边", self.clear_text_outline, bar=True)
         self.no_stroke_button.hide()
         toolbar.addWidget(self.no_stroke_button)
-        toolbar.addWidget(self.button("无填充", self.clear_fill, bar=True))
+        toolbar.addWidget(self.button("无填充", self.clear_fill))
+        toolbar.addWidget(QLabel("不透明度"))
+        self.opacity_spin = QSpinBox()
+        self.opacity_spin.setRange(0, 100)
+        self.opacity_spin.setSuffix("%")
+        self.opacity_spin.setKeyboardTracking(False)
+        self.opacity_spin.setFixedWidth(76)
+        self.opacity_spin.setToolTip("调整所选物体的不透明度")
+        self.opacity_spin.valueChanged.connect(self.change_opacity)
+        toolbar.addWidget(self.opacity_spin)
         self.refresh_colors()
         toolbar.addStretch()
+        toolbar.addWidget(self.button("载入图纸标注", self.add_file_name_label))
         layout.addLayout(toolbar)
         self.workspace = QMainWindow()
         self.workspace.setDockNestingEnabled(True)
@@ -2287,11 +2355,12 @@ class MainWindow(QMainWindow):
         buttons.clear()
         for key in self.facility_shortcuts:
             caption = NAMES[key] + (" " + TOOL_KEYS[key] if key in TOOL_KEYS else "")
-            button = self.button(caption, lambda checked=False, k=key: self.activate_tool(k), key, bar=True)
+            button = self.button(caption, lambda checked=False, k=key: self.activate_tool(k), key, bar=True,
+                                 button_type=FacilityShortcutButton)
             button.setProperty("toolButton", True)
             button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             button.customContextMenuRequested.connect(lambda pos, k=key, b=button: self.shortcut_menu(k, b.mapToGlobal(pos)))
-            button.setToolTip(caption + "；右键移除快捷方式")
+            button.setToolTip(caption + " · 左键拖到图纸 · 右键移除快捷方式")
             buttons.append(button)
         self.tool_columns = 0
 
@@ -2447,6 +2516,8 @@ class MainWindow(QMainWindow):
             parent = QTransform().scale(data["w"] / data["base_w"], data["h"] / data["base_h"]) * item_transform(data)
             for original in data["children"]:
                 child = copy.deepcopy(original)
+                if "opacity" in data:
+                    child["opacity"] = child.get("opacity", 1) * data["opacity"]
                 transform = item_transform(child) * parent
                 child.update(x=transform.dx(), y=transform.dy(), angle=0, layer=data["layer"], stack=data.get("stack", 1),
                              affine=[transform.m11(), transform.m12(), transform.m21(), transform.m22()])
@@ -2741,11 +2812,12 @@ class MainWindow(QMainWindow):
         layer = next(layer for layer in self.doc["layers"] if layer["id"] == self.active_layer)
         if layer["locked"] or not layer["visible"]:
             self.tool_label.setText("当前图层已锁定或隐藏，请在“图层与组”中切换图层")
-            return
+            return False
         data["layer"] = self.active_layer
         self.doc["items"].append(data)
         self.rebuild([data["id"]])
         self.commit()
+        return True
 
     def styled_element(self, *args):
         data = element(*args)
@@ -2923,6 +2995,18 @@ class MainWindow(QMainWindow):
             self.commit()
             self.selection_changed()
 
+    def change_opacity(self, value):
+        selected = self.scene.selectedItems()
+        if not selected:
+            return
+        for item in selected:
+            if value == 100:
+                item.data.pop("opacity", None)
+            else:
+                item.data["opacity"] = value / 100
+            item.update()
+        self.commit()
+
     def fill_at(self, pos):
         for item in self.scene.items():
             if not isinstance(item, PlanItem) or not item.isVisible() or not item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable:
@@ -3099,6 +3183,10 @@ class MainWindow(QMainWindow):
         self.finish_property_preview()
         selected = self.scene.selectedItems()
         self.view.viewport().update()
+        self.opacity_spin.blockSignals(True)
+        self.opacity_spin.setEnabled(bool(selected))
+        self.opacity_spin.setValue(round(100 * selected[0].data.get("opacity", 1)) if selected else 100)
+        self.opacity_spin.blockSignals(False)
         if self.side_tabs.currentIndex() == 1:
             ids = {i.data["id"] for i in selected}
             self.layer_tree.blockSignals(True)
@@ -3862,6 +3950,9 @@ def validate_items(items, *, legend_box=False, _depth=0, _ids=None, _budget=None
             raise ValueError("图形尺寸过小")
         if "fill" in d and (not isinstance(d["fill"], str) or not QColor(d["fill"]).isValid()):
             raise ValueError("填充颜色无效")
+        opacity = d.get("opacity", 1)
+        if type(opacity) not in (float, int) or not 0 <= opacity <= 1:
+            raise ValueError("不透明度无效")
         if "affine" in d:
             matrix = d["affine"]
             if (not isinstance(matrix, list) or len(matrix) != 4 or any(type(v) not in (int, float)
@@ -4032,7 +4123,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("2.9.1")
+    app.setApplicationVersion("1.0")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

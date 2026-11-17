@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt, QPointF, QPoint, QEvent
-from PySide6.QtGui import QMouseEvent, QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QMouseEvent, QDragEnterEvent, QDropEvent, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QAbstractItemView
+from PySide6.QtWidgets import QAbstractItemView, QPushButton
 from main import create_app, MainWindow, FACILITY_MIME, element, load_document
 from facilities import search_facilities
 
@@ -133,6 +133,69 @@ class Version27Test(unittest.TestCase):
         self.assertIn("双人床", results("chuang"))
         self.assertNotIn("平开窗", results("chuang"))
         self.assertEqual(results("g"), {"床头柜", "双抽床头柜", "双门衣柜", "三门衣柜", "四门衣柜", "推拉衣柜"})
+
+    def test_shortcut_drag_places_facility_on_canvas_and_click_selects_tool(self):
+        w = self.w
+        w.fit()
+        button = next(b for b in w.tool_groups[-1][1] if b.property("iconKind") == "bed")
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        self.assertEqual(w.tool, "bed")
+        w.set_tool("select")
+        start = button.rect().center()
+        end = start + QPoint(36, 0)
+        with patch("main.QDrag") as drag:
+            QTest.mousePress(button, Qt.MouseButton.LeftButton, pos=start)
+            move = QMouseEvent(QEvent.Type.MouseMove, QPointF(end), QPointF(button.mapToGlobal(end)),
+                               Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+            self.app.sendEvent(button, move)
+            QTest.mouseRelease(button, Qt.MouseButton.LeftButton, pos=end)
+            self.assertEqual(drag.call_count, 1)
+            mime = drag.return_value.setMimeData.call_args.args[0]
+        self.assertEqual(w.tool, "select")
+        pos = w.view.mapFromScene(QPointF(300, 300))
+        enter = QDragEnterEvent(pos, Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        self.app.sendEvent(w.view.viewport(), enter)
+        drop = QDropEvent(QPointF(pos), Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        self.app.sendEvent(w.view.viewport(), drop)
+        self.assertTrue(enter.isAccepted())
+        self.assertTrue(drop.isAccepted())
+        item, = w.doc["items"]
+        self.assertEqual((item["kind"], item["x"], item["y"]), ("bed", 300, 300))
+        w.undo()
+        self.assertEqual(w.doc["items"], [])
+
+    def test_opacity_roundtrips_and_exports_and_toolbar_has_requested_buttons(self):
+        w = self.w
+        buttons = {b.text(): b for b in w.findChildren(QPushButton)}
+        self.assertTrue(all(not buttons[name].property("barButton") for name in ("撤销", "无填充", "载入图纸标注")))
+        self.assertGreater(buttons["载入图纸标注"].x(), w.opacity_spin.x())
+        self.assertFalse(w.opacity_spin.isEnabled())
+        w.add(element("room", 100, 100, 210, 180, fill="#ff0000"))
+        w.opacity_spin.setValue(50)
+        self.assertEqual(w.doc["items"][0]["opacity"], 0.5)
+        root = Path(self.tmp.name)
+        png = root / "opacity.png"
+        w.export_to(png)
+        color = QImage(str(png)).pixelColor(300, 300)
+        self.assertEqual(color.red(), 255)
+        self.assertIn(color.green(), (127, 128))
+        self.assertIn(color.blue(), (127, 128))
+        svg = root / "opacity.svg"
+        w.export_to(svg)
+        self.assertIn('opacity="0.5"', svg.read_text(encoding="utf-8"))
+        edf = root / "opacity.edf"
+        w.save_to(str(edf))
+        self.assertEqual(load_document(edf)["items"][0]["opacity"], 0.5)
+        w.undo()
+        self.assertNotIn("opacity", w.doc["items"][0])
+        w.redo()
+        self.assertEqual(w.doc["items"][0]["opacity"], 0.5)
+        w.add(element("bed", 400, 100))
+        w.select_all()
+        w.group_selection()
+        w.opacity_spin.setValue(40)
+        w.ungroup_selection()
+        self.assertEqual(sorted(d["opacity"] for d in w.doc["items"]), [0.2, 0.4])
 
     def test_import_is_persistent_and_reference_box_embeds_entire_library(self):
         w = self.w

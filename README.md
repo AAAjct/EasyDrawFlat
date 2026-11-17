@@ -4,12 +4,15 @@
 
 **由 gpt6.1sol 制作。**
 
-[下载 2.9.1 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.9.1/EasyDrawFlat.exe)
+[下载 1.0 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v1.0/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
 
-## 2.9.1 更新
+## 1.0 更新
 
+- 「载入图纸标注」放在绘图工具栏最右侧。它与「撤销」「无填充」都有按钮边框。
+- 在左侧按住预制设施快捷方式并拖到图纸即可放置。也可以单击快捷方式，再到图纸上单击放置。
+- 选中物体后可调整 0–100% 不透明度，支持组合和多选，设置随图纸保存并应用于导出。
 - 修复切换图层显示或锁定状态时偶发的崩溃。
 
 ## 2.9 更新
@@ -91,7 +94,7 @@ python -m pip install pyinstaller
 python build.py
 ```
 
-程序生成在 `dist/v2.9.1/EasyDrawFlat.exe`。运行验证：
+程序生成在 `dist/v1.0/EasyDrawFlat.exe`。运行验证：
 
 ```powershell
 python -m unittest discover -s tests -v
