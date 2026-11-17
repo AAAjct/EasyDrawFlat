@@ -4,9 +4,14 @@
 
 **由 gpt6.1sol 制作。**
 
-[下载 2.7 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.7/EasyDrawFlat.exe)
+[下载 2.8 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.8/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
+
+## 2.8 更新
+
+- 选中图例并点击「移除库图例」，即可移除包括门、床在内的任意库图例。重启后仍保留移除结果，已加入图纸的图例继续显示。可用「一键添加所有快捷设施」重新录入快捷设施。
+- 顶栏「更多」按钮显示一个下拉箭头。
 
 ## 2.7 更新
 
@@ -78,7 +83,7 @@ python -m pip install pyinstaller
 python build.py
 ```
 
-程序生成在 `dist/v2.7/EasyDrawFlat.exe`。运行验证：
+程序生成在 `dist/v2.8/EasyDrawFlat.exe`。运行验证：
 
 ```powershell
 python -m unittest discover -s tests -v

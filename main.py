@@ -1744,6 +1744,7 @@ class MainWindow(QMainWindow):
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)) / "legend-library.json"
         self.library = self.read_library()
         self.settings = QSettings(str(self.library_path.parent / "preferences.ini"), QSettings.Format.IniFormat)
+        self.removed_default_legends = set(self.settings.value("legends/removed_defaults", [], type=list))
         saved_shortcuts = self.settings.value("facilities/shortcuts", SYMBOLS, type=list)
         self.facility_shortcuts = list(dict.fromkeys(key for key in saved_shortcuts if key in FACILITY_SIZES))
         self.doc = self.blank_document()
@@ -1785,7 +1786,7 @@ class MainWindow(QMainWindow):
                                 ("保存", self.save_file, "Ctrl+S"), ("另存为", self.save_as, "Ctrl+Shift+S"),
                                 ("导出图片", self.export, "Ctrl+E")]:
             header.addWidget(self.button(label, cb, shortcut=key, bar=True))
-        more = self.button("更多 ▾", lambda: None, bar=True)
+        more = self.button("更多", lambda: None, bar=True)
         menu = QMenu(more)
         for label, callback in [("批量保存", self.save_all), ("批量导出", self.export_all),
                                 ("载入文件名标注", self.add_file_name_label),
@@ -3003,7 +3004,7 @@ class MainWindow(QMainWindow):
         imported = {row.get("source_facility") for row in self.library}
         self.legend_kind.clear()
         for kind in SYMBOLS:
-            if kind in imported or not legend_matches(NAMES[kind], query):
+            if kind in self.removed_default_legends or kind in imported or not legend_matches(NAMES[kind], query):
                 continue
             self.legend_kind.addItem(icon(kind, "#d9e1e5" if self.dark_mode.isChecked() else INK), NAMES[kind], {"kind": kind})
             if kind == wanted:
@@ -3019,16 +3020,24 @@ class MainWindow(QMainWindow):
         data = self.legend_kind.currentData() or {}
         enabled = data.get("kind") == "custom" and bool(data.get("id"))
         self.rename_library_button.setEnabled(enabled)
-        self.remove_library_button.setEnabled(enabled)
+        self.remove_library_button.setEnabled(bool(data))
 
     def remove_library_entry(self):
         template = self.legend_kind.currentData() or {}
-        if template.get("kind") != "custom" or not template.get("id"):
+        if not template:
             return
-        rows = [row for row in self.library if row["id"] != template["id"]]
-        if self.write_library(rows):
+        if template["kind"] == "custom":
+            rows = [row for row in self.library if row["id"] != template["id"]]
+            if not self.write_library(rows):
+                return
             self.library = rows
-            self.refresh_library_choices()
+            default_kind = template.get("source_facility")
+        else:
+            default_kind = template["kind"]
+        if default_kind in SYMBOLS:
+            self.removed_default_legends.add(default_kind)
+            self.settings.setValue("legends/removed_defaults", sorted(self.removed_default_legends))
+        self.refresh_library_choices()
 
     def rename_library_entry(self):
         template = self.legend_kind.currentData() or {}
@@ -4032,7 +4041,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("2.7")
+    app.setApplicationVersion("2.8")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

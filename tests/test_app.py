@@ -1182,7 +1182,7 @@ class DrawingTest(unittest.TestCase):
         self.assertEqual(w.library, [])
         self.assertEqual(json.loads(w.library_path.read_text(encoding="utf-8")), [])
         self.assertEqual(w.doc["legend"][0]["text"], "已使用的图例")
-        self.assertFalse(w.remove_library_button.isEnabled())
+        self.assertTrue(w.remove_library_button.isEnabled())
 
     def test_compact_panels_fit_common_1080p_scaling_and_export_stays_white(self):
         from PySide6.QtGui import QPainter

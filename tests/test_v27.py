@@ -72,6 +72,32 @@ class Version27Test(unittest.TestCase):
         self.assertTrue(w.facility_dialog.isVisible())
         self.assertIn(key, w.settings.value("facilities/shortcuts", [], type=list))
 
+    def test_remove_preset_and_imported_legends_persists_without_changing_drawing(self):
+        w = self.w
+        w.legend_search.setText("门")
+        with patch("main.QInputDialog.getText", return_value=("入口", True)):
+            w.add_legend()
+        saved_drawing = w.serialize()
+        self.assertTrue(w.remove_library_button.isEnabled())
+        w.remove_library_button.click()
+        self.assertEqual(w.legend_kind.count(), 0)
+        self.assertFalse(w.remove_library_button.isEnabled())
+        w.facility_shortcuts = ["door", "bed"]
+        w.add_shortcuts_to_library()
+        self.assertEqual(w.legend_kind.currentText(), "门")
+        w.remove_library_button.click()
+        w.legend_search.setText("床")
+        w.remove_library_button.click()
+        self.assertEqual(w.serialize(), saved_drawing)
+        second = MainWindow(library_path=w.library_path)
+        try:
+            for name in ("门", "床"):
+                second.legend_search.setText(name)
+                self.assertEqual(second.legend_kind.count(), 0)
+        finally:
+            second.close()
+            second.deleteLater()
+
     def test_library_search_chinese_full_pinyin_initials_and_empty_results(self):
         w = self.w
         w.facility_shortcuts = [search_facilities("三人沙发")[0], search_facilities("圆餐桌")[0]]
