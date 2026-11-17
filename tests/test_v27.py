@@ -118,6 +118,22 @@ class Version27Test(unittest.TestCase):
         w.legend_search.clear()
         self.assertGreater(w.legend_kind.count(), 0)
 
+    def test_facility_search_matches_pinyin_inside_names_and_combines_with_chinese_filters(self):
+        w = self.w
+        w.show_facilities()
+        def results(query):
+            w.facility_search.setText(query)
+            return {w.facility_list.item(i).text() for i in range(w.facility_list.count())}
+
+        self.assertIn("单人床", results("c"))
+        self.assertIn("双人床", results("CHUANG"))
+        self.assertIn("单人床", results("dr c"))
+        self.assertEqual(results("单人 chuang"), {"单人床"})
+        w.facility_category.setCurrentText("卧室家具")
+        self.assertIn("双人床", results("chuang"))
+        self.assertNotIn("平开窗", results("chuang"))
+        self.assertEqual(results("g"), {"床头柜", "双抽床头柜", "双门衣柜", "三门衣柜", "四门衣柜", "推拉衣柜"})
+
     def test_import_is_persistent_and_reference_box_embeds_entire_library(self):
         w = self.w
         w.facility_shortcuts = [search_facilities("马桶")[0], search_facilities("沙发")[0]]

@@ -1,4 +1,5 @@
 """内置中文设施库：按需生成矢量图案，不携带位图或外部素材。"""
+from functools import lru_cache
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QPainterPath, QTransform
 
@@ -101,15 +102,34 @@ ALIASES = {"床": "睡眠 卧室", "沙发": "座椅 客厅", "桌": "台 桌子
            "空调": "冷气", "景观树": "树木 绿植", "花": "绿植 植物", "灭火": "消防"}
 
 
+@lru_cache(maxsize=2048)
+def pinyin_keys(name):
+    from pypinyin import lazy_pinyin, Style
+    return ("".join(lazy_pinyin(name)).casefold(),
+            "".join(lazy_pinyin(name, style=Style.FIRST_LETTER)).casefold())
+
+
+def name_matches(name, query, keywords=""):
+    text = (name + " " + keywords).casefold()
+    for word in query.casefold().replace("ü", "v").split():
+        if word in text:
+            continue
+        if not any("a" <= letter <= "z" for letter in word):
+            return False
+        full, initials = pinyin_keys(name)
+        if word not in initials and (len(word) == 1 or word not in full):
+            return False
+    return True
+
+
 def search_facilities(query="", category="全部分类"):
-    words = query.strip().split()
     result = []
     for key, row in FACILITIES.items():
         if category != "全部分类" and row["category"] != category:
             continue
-        keywords = row["name"] + " " + row["category"] + " " + " ".join(
+        keywords = row["category"] + " " + " ".join(
             aliases for token, aliases in ALIASES.items() if token in row["name"])
-        if all(word in keywords for word in words):
+        if name_matches(row["name"], query, keywords):
             result.append(key)
     return result
 

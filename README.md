@@ -4,9 +4,13 @@
 
 **由 gpt6.1sol 制作。**
 
-[下载 2.8 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.8/EasyDrawFlat.exe)
+[下载 2.9 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.9/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
+
+## 2.9 更新
+
+- 设施库支持拼音模糊搜索。输入 `c` 或 `chuang` 都能找到名称包含「床」的设施，例如单人床、双人床。也可以输入 `单人 chuang`，或同时使用分类筛选。
 
 ## 2.8 更新
 
@@ -83,7 +87,7 @@ python -m pip install pyinstaller
 python build.py
 ```
 
-程序生成在 `dist/v2.8/EasyDrawFlat.exe`。运行验证：
+程序生成在 `dist/v2.9/EasyDrawFlat.exe`。运行验证：
 
 ```powershell
 python -m unittest discover -s tests -v

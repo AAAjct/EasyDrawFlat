@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QDockWidget, QMenu, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QAbstractItemView)
 from PySide6.QtSvg import QSvgGenerator
-from facilities import FACILITIES, search_facilities, facility_path
+from facilities import FACILITIES, search_facilities, facility_path, name_matches
 from color_picker import ColorPickerDialog
 
 PAPER = QRectF(0, 0, 1400, 900)
@@ -210,22 +210,6 @@ def ensure_layers(doc):
         doc["layers"] = [dict(id="default", name="默认图层", visible=True, locked=False)]
     for data in doc["items"]:
         data.setdefault("layer", doc["layers"][0]["id"])
-
-
-@lru_cache(maxsize=2048)
-def pinyin_keys(text):
-    from pypinyin import lazy_pinyin, Style
-    return ("".join(lazy_pinyin(text)).casefold(),
-            "".join(lazy_pinyin(text, style=Style.FIRST_LETTER)).casefold())
-
-
-def legend_matches(name, query):
-    for word in query.casefold().replace("ü", "v").split():
-        if word in name.casefold():
-            continue
-        if not any("a" <= letter <= "z" for letter in word) or not any(word in key for key in pinyin_keys(name)):
-            return False
-    return True
 
 
 def room_walls(data):
@@ -2343,7 +2327,7 @@ class MainWindow(QMainWindow):
             hint.setWordWrap(True)
             layout.addWidget(hint)
             self.facility_search = QLineEdit()
-            self.facility_search.setPlaceholderText("搜索名称或关键词，例如：沙发、马桶、消防")
+            self.facility_search.setPlaceholderText("搜索设施：中文、全拼或首字母（如 chuang、c）")
             self.facility_category = QComboBox()
             self.facility_category.addItems(["全部分类", *dict.fromkeys(row["category"] for row in FACILITIES.values())])
             row = QHBoxLayout()
@@ -3004,13 +2988,13 @@ class MainWindow(QMainWindow):
         imported = {row.get("source_facility") for row in self.library}
         self.legend_kind.clear()
         for kind in SYMBOLS:
-            if kind in self.removed_default_legends or kind in imported or not legend_matches(NAMES[kind], query):
+            if kind in self.removed_default_legends or kind in imported or not name_matches(NAMES[kind], query):
                 continue
             self.legend_kind.addItem(icon(kind, "#d9e1e5" if self.dark_mode.isChecked() else INK), NAMES[kind], {"kind": kind})
             if kind == wanted:
                 self.legend_kind.setCurrentIndex(self.legend_kind.count() - 1)
         for row in self.library:
-            if not legend_matches(row["name"], query):
+            if not name_matches(row["name"], query):
                 continue
             self.legend_kind.addItem(legend_icon(row), row["name"], copy.deepcopy(row))
             if row["id"] == wanted:
@@ -4041,7 +4025,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("2.8")
+    app.setApplicationVersion("2.9")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。
