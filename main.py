@@ -2107,10 +2107,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(hint)
         self.side_tabs.addTab(page, "图层与组")
         self.layer_tree_dirty = True
+        self.changing_layer_checkbox = False
         self.side_tabs.currentChanged.connect(lambda index: self.refresh_layers() if index == 1 else None)
 
     def refresh_layers(self):
-        if self.side_tabs.currentIndex() != 1:
+        if self.side_tabs.currentIndex() != 1 or self.changing_layer_checkbox:
             self.layer_tree_dirty = True
             return
         selected = {item.data["id"] for item in self.scene.selectedItems()}
@@ -2183,8 +2184,14 @@ class MainWindow(QMainWindow):
         self.finish_transform()
         layer = next(layer for layer in self.doc["layers"] if layer["id"] == identity)
         layer["visible" if column == 1 else "locked"] = node.checkState(column) == Qt.CheckState.Checked
-        self.rebuild([i.data["id"] for i in self.scene.selectedItems()])
-        self.commit()
+        # Qt 仍在处理触发 itemChanged 的行，此时清空树会销毁该行。
+        self.changing_layer_checkbox = True
+        try:
+            self.rebuild([i.data["id"] for i in self.scene.selectedItems()])
+            self.commit()
+        finally:
+            self.changing_layer_checkbox = False
+        QTimer.singleShot(0, self.layer_tree, self.refresh_layers)
 
     def rename_tree_item(self, node, column):
         if column != 0:
@@ -4025,7 +4032,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("2.9")
+    app.setApplicationVersion("2.9.1")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

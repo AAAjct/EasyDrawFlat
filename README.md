@@ -4,9 +4,13 @@
 
 **由 gpt6.1sol 制作。**
 
-[下载 2.9 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.9/EasyDrawFlat.exe)
+[下载 2.9.1 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.9.1/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
+
+## 2.9.1 更新
+
+- 修复切换图层显示或锁定状态时偶发的崩溃。
 
 ## 2.9 更新
 
@@ -87,7 +91,7 @@ python -m pip install pyinstaller
 python build.py
 ```
 
-程序生成在 `dist/v2.9/EasyDrawFlat.exe`。运行验证：
+程序生成在 `dist/v2.9.1/EasyDrawFlat.exe`。运行验证：
 
 ```powershell
 python -m unittest discover -s tests -v
