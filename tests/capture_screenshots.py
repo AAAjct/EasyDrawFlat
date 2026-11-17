@@ -73,6 +73,18 @@ def capture():
         output = ROOT / "docs" / "images"
         output.mkdir(parents=True, exist_ok=True)
         w.grab().save(str(output / "main.png"))
+        w.new_file()
+        w.doc["title"] = "图例库与参考框"
+        w.rebuild()
+        w.add_shortcuts_to_library()
+        w.add_all_library_to_legend()
+        w.side_tabs.setCurrentIndex(2)
+        w.legend_search.setText("sf")
+        app.processEvents()
+        w.fit()
+        app.processEvents()
+        w.grab().save(str(output / "legends.png"))
+        w.saved = w.serialize()
         w.show_facilities()
         w.facility_dialog.resize(680, 570)
         app.processEvents()

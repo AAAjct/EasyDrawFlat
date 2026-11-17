@@ -383,38 +383,41 @@ class Version26Test(unittest.TestCase):
         self.assertNotIn(key, w.facility_shortcuts)
         self.assertNotIn(key, w.settings.value("facilities/shortcuts", [], type=list))
 
-    def test_bulk_shortcuts_and_custom_legends_place_editable_objects_once(self):
+    def test_bulk_shortcuts_and_custom_legends_form_reference_box(self):
         from main import SYMBOLS
         w = self.w
         w.facility_shortcuts = SYMBOLS + list(FACILITIES)[:30]
-        w.add_shortcuts_to_legend()
+        w.add_shortcuts_to_library()
         count = len(w.facility_shortcuts)
-        self.assertEqual(len(w.doc["legend"]), count)
-        index = w.index
-        w.add_shortcuts_to_legend()
-        self.assertEqual(w.index, index)
+        self.assertEqual(len(w.library), count)
+        self.assertEqual(w.doc["legend"], [])
+        ids = [row["id"] for row in w.library]
+        w.add_shortcuts_to_library()
+        self.assertEqual([row["id"] for row in w.library], ids)
+        self.assertEqual(len(json.loads(w.library_path.read_text(encoding="utf-8"))), count)
         w.add(element("ellipse", 100, 100, 80, 60, fill="#ff0000"))
         w.add(element("text", 220, 110, 150, 50, "自定义组合"))
         w.select_all()
         self.assertTrue(w.store_selection_in_library("自定义组合"))
-        w.doc["legend"].append(copy.deepcopy(w.library[-1]))
-        w.refresh_legend()
-        w.commit()
-        w.place_all_legends()
-        self.assertEqual(len(w.doc["items"]), count + 3)
-        group = w.doc["items"][-1]
-        self.assertEqual(group["kind"], "group")
-        self.assertEqual(len(group["children"]), 2)
-        self.assertEqual(group["text"], "自定义组合")
-        for data in w.doc["items"][2:]:
-            self.assertTrue(QRectF(0, 0, 1400, 900).contains(QRectF(data["x"], data["y"], data["w"], data["h"])))
+        w.legend_search.setText("自定义")
+        w.add_all_library_to_legend()
+        self.assertEqual(len(w.doc["items"]), 2)
+        self.assertEqual(len(w.doc["legend"]), count + 1)
+        self.assertEqual(w.doc["legend"][-1]["text"], "自定义组合")
+        self.assertTrue(w.legend_box.isVisible())
+        self.assertEqual(w.legend_box.data["x"] + w.legend_box.data["w"], 1356)
+        self.assertEqual(w.legend_box.data["y"], 44)
+        index = w.index
+        w.add_all_library_to_legend()
+        self.assertEqual(w.index, index)
         path = Path(self.tmp.name) / "全部图例.edf"
         w.save_to(str(path))
         self.assertEqual(load_document(path), w.doc)
         w.undo()
+        self.assertEqual(w.doc["legend"], [])
         self.assertEqual(len(w.doc["items"]), 2)
         w.redo()
-        self.assertEqual(len(w.doc["items"]), count + 3)
+        self.assertEqual(len(w.doc["legend"]), count + 1)
 
 
 if __name__ == "__main__":

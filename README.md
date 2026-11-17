@@ -4,18 +4,25 @@
 
 **由 gpt6.1sol 制作。**
 
-[下载 2.6 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.6/EasyDrawFlat.exe)
+[下载 2.7 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.7/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
 
-## 2.6 有什么新功能
+## 2.7 更新
+
+- 修复设施库拖出功能。把设施拖到左侧“预制设施”下方的空白区域即可添加快捷方式。
+- “一键添加所有快捷设施”会把所有快捷设施录入本机**图例库**，并跳过重复项。
+- “一键添加所有图例至画布”会把**图例库的全部图案**加入画布右上角的图例参考框，包含图案与名称，支持撤销和导出。
+- 图例库支持中文、全拼和拼音首字母搜索，例如“沙发”“shafa”“sf”。
+
+## 主要功能
 
 - **椭圆工具**：拖动绘制椭圆，支持填色、描边和缩放。
 - **更方便的选色**：参考 PS 的色板和色相条，支持 RGB、色相/饱和度/明度、十六进制色值、常用色和最近用色。
 - **图层与组合**：按类别整理物体，图层可改名、排序、隐藏和锁定；按住层内物体拖动，可改变遮挡顺序或移入别的图层。选中多个物体后右键组合，也可拆分；一个组合按一个物体操作。
 - **134 种中文设施**：卧室、客厅、餐厨、卫浴、办公教学、建筑构件、公共及室外设施，支持分类和关键词搜索，例如“沙发”“马桶”“消防”。
 - **独立设施库窗口**：显示在任务栏，可最小化、最大化、关闭，能够放在一旁继续画图。把图案拖到左侧“预制设施”区域即可添加快捷方式，重启后保留，右键可移除。
-- **更简洁、更轻量**：属性、图层与组、图例分开显示。复用画布对象，减少重绘和图标生成；限制撤销快照占用。Windows 单文件程序约 26 MB，较 2.5 的约 47 MB 减少约 44%。
+- **更简洁、更轻量**：属性、图层与组、图例分开显示。复用画布对象，减少重绘和图标生成；限制撤销快照占用。精简打包时未使用的 Qt 模块，Windows 单文件程序可直接运行。
 
 ![中文预制设施库](docs/images/facilities.png)
 
@@ -30,7 +37,9 @@
 
 图层从上往下叠放；隐藏层不导出，锁定层可显示但不能编辑。删除图层会同时删除该层全部物体，误删可用 Ctrl+Z 撤销。删除最后一层后会留下一个空白默认层。设施库快捷方式与最近颜色保存在本机，不影响图纸文件。
 
-图例页可“一键添加所有快捷设施”（重复图案自动跳过），再用“一键添加所有图例至画布”将图案整齐排入画布，保留为可编辑物体。
+图例页可“一键添加所有快捷设施”录入图例库，再用“一键添加所有图例至画布”显示右上角的图例参考框。搜索只筛选图例库下拉列表，不影响批量添加全部图例。图纸会嵌入使用的图例，换一台电脑也能显示。
+
+![图例库拼音搜索与右上角参考框](docs/images/legends.png)
 
 支持多图纸选项卡、跨图纸复制粘贴、撤销重做、钢笔曲线、锚点编辑、文字标注、图例、网格吸附，以及批量保存和导出。可以把 `.edf` 文件拖到软件窗口或程序图标上打开。
 
@@ -69,7 +78,7 @@ python -m pip install pyinstaller
 python build.py
 ```
 
-程序生成在 `dist/v2.6/EasyDrawFlat.exe`。运行验证：
+程序生成在 `dist/v2.7/EasyDrawFlat.exe`。运行验证：
 
 ```powershell
 python -m unittest discover -s tests -v
@@ -90,4 +99,4 @@ tests/               功能回归测试与截图脚本
 docs/images/         README 软件截图
 ```
 
-基于 Python 和 PySide6 开发。仓库保留源码、测试和说明图片，Windows 程序在 Releases 下载。
+基于 Python、PySide6 和 [pypinyin](https://github.com/mozillazg/python-pinyin) 开发。仓库保留源码、测试和说明图片，Windows 程序在 Releases 下载。

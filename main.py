@@ -212,6 +212,22 @@ def ensure_layers(doc):
         data.setdefault("layer", doc["layers"][0]["id"])
 
 
+@lru_cache(maxsize=2048)
+def pinyin_keys(text):
+    from pypinyin import lazy_pinyin, Style
+    return ("".join(lazy_pinyin(text)).casefold(),
+            "".join(lazy_pinyin(text, style=Style.FIRST_LETTER)).casefold())
+
+
+def legend_matches(name, query):
+    for word in query.casefold().replace("ü", "v").split():
+        if word in name.casefold():
+            continue
+        if not any("a" <= letter <= "z" for letter in word) or not any(word in key for key in pinyin_keys(name)):
+            return False
+    return True
+
+
 def room_walls(data):
     """房间墙段使用相对坐标，开口随房间缩放和旋转。"""
     walls = data.get("walls", [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]])
@@ -1881,9 +1897,13 @@ class MainWindow(QMainWindow):
         shortcut_layout.addLayout(self.shortcut_grid)
         self.tool_groups.append((self.shortcut_grid, []))
         self.populate_facility_shortcuts()
-        tools.addWidget(self.shortcut_panel)
-        tools.addWidget(self.button("打开设施库…", self.show_facilities))
-        tools.addStretch()
+        shortcut_layout.addWidget(self.button("打开设施库…", self.show_facilities))
+        self.shortcut_drop_hint = QLabel("拖入设施以添加快捷方式")
+        self.shortcut_drop_hint.setObjectName("selectionCaption")
+        self.shortcut_drop_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        self.shortcut_drop_hint.setWordWrap(True)
+        shortcut_layout.addWidget(self.shortcut_drop_hint, 1)
+        tools.addWidget(self.shortcut_panel, 1)
         rail_scroll = QScrollArea()
         rail_scroll.setWidgetResizable(True)
         rail_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -1996,6 +2016,11 @@ class MainWindow(QMainWindow):
         self.remove_library_button = self.button("移除库图例", self.remove_library_entry)
         self.legend_kind.currentIndexChanged.connect(self.update_library_actions)
         self.refresh_library_choices()
+        self.legend_search = QLineEdit()
+        self.legend_search.setPlaceholderText("搜索图例库：中文 / 拼音 / 首字母")
+        self.legend_search.setClearButtonEnabled(True)
+        self.legend_search.textChanged.connect(lambda: self.refresh_library_choices())
+        controls.addWidget(self.legend_search)
         controls.addWidget(self.legend_kind)
         library_actions = QHBoxLayout()
         library_actions.addWidget(self.rename_library_button)
@@ -2007,8 +2032,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.button("改名", self.edit_legend))
         row.addWidget(self.button("移除", self.remove_legend))
         controls.addLayout(row)
-        controls.addWidget(self.button("一键添加所有快捷设施", self.add_shortcuts_to_legend))
-        controls.addWidget(self.button("一键添加所有图例至画布", self.place_all_legends))
+        self.import_shortcuts_button = self.button("一键添加所有快捷设施", self.add_shortcuts_to_library)
+        self.import_shortcuts_button.setToolTip("将工具栏快捷设施录入本机图例库，跳过已录入的设施")
+        controls.addWidget(self.import_shortcuts_button)
+        self.add_all_legends_button = self.button("一键添加所有图例至画布", self.add_all_library_to_legend)
+        self.add_all_legends_button.setToolTip("将图例库中的全部图案加入画布右上角的图例参考框")
+        controls.addWidget(self.add_all_legends_button)
         controls.addStretch()
         self.legend_splitter.setSizes([100, 1000])
         side_scroll = QScrollArea()
@@ -2321,10 +2350,13 @@ class MainWindow(QMainWindow):
             row.addWidget(self.facility_category)
             layout.addLayout(row)
             self.facility_list = FacilityList()
-            self.facility_list.setDragEnabled(True)
             self.facility_list.setViewMode(QListWidget.ViewMode.IconMode)
             self.facility_list.setResizeMode(QListWidget.ResizeMode.Adjust)
             self.facility_list.setMovement(QListWidget.Movement.Static)
+            # Static 会重置 dragEnabled，必须在布局模式之后启用向外拖动。
+            self.facility_list.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+            self.facility_list.setDragEnabled(True)
+            self.facility_list.setDefaultDropAction(Qt.DropAction.CopyAction)
             self.facility_list.setIconSize(QSize(48, 48))
             self.facility_list.setGridSize(QSize(126, 84))
             self.facility_list.setWordWrap(True)
@@ -2967,12 +2999,18 @@ class MainWindow(QMainWindow):
     def refresh_library_choices(self, selected_id=None):
         current = self.legend_kind.currentData() or {}
         wanted = selected_id or current.get("id") or current.get("kind")
+        query = self.legend_search.text() if hasattr(self, "legend_search") else ""
+        imported = {row.get("source_facility") for row in self.library}
         self.legend_kind.clear()
         for kind in SYMBOLS:
+            if kind in imported or not legend_matches(NAMES[kind], query):
+                continue
             self.legend_kind.addItem(icon(kind, "#d9e1e5" if self.dark_mode.isChecked() else INK), NAMES[kind], {"kind": kind})
             if kind == wanted:
                 self.legend_kind.setCurrentIndex(self.legend_kind.count() - 1)
         for row in self.library:
+            if not legend_matches(row["name"], query):
+                continue
             self.legend_kind.addItem(legend_icon(row), row["name"], copy.deepcopy(row))
             if row["id"] == wanted:
                 self.legend_kind.setCurrentIndex(self.legend_kind.count() - 1)
@@ -3417,6 +3455,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "图例已满", f"每张图纸最多显示 {MAX_LEGEND_ROWS} 条图例。")
             return
         template = self.legend_kind.currentData()
+        if template is None:
+            self.tool_label.setText("没有匹配的图例，请修改搜索内容")
+            return
         text, ok = QInputDialog.getText(self, "添加图例", "图例名称：", text=template.get("name", self.legend_kind.currentText()))
         if ok and text.strip():
             self.finish_transform()
@@ -3426,62 +3467,53 @@ class MainWindow(QMainWindow):
             self.refresh_legend(len(self.doc["legend"]) - 1)
             self.commit()
 
-    def add_shortcuts_to_legend(self):
-        existing = {row["kind"] for row in self.doc["legend"]}
-        rows = [dict(kind=key, text=NAMES[key]) for key in self.facility_shortcuts if key not in existing]
-        if not rows:
-            self.tool_label.setText("所有快捷设施都已在图纸图例中")
+    def add_shortcuts_to_library(self):
+        if self.library_error:
+            QMessageBox.warning(self, "无法更新图例库", "现有图例库无法读取，请先检查文件：\n" + str(self.library_path))
             return
+        existing = {row.get("source_facility") for row in self.library}
+        rows = []
+        for key in self.facility_shortcuts:
+            if key not in existing:
+                width, height = FACILITY_SIZES[key]
+                rows.append(dict(kind="custom", id=uuid.uuid4().hex, name=NAMES[key], text=NAMES[key],
+                                 width=width, height=height, source_facility=key,
+                                 items=[element(key, 0, 0, width, height)]))
+        if not rows:
+            self.tool_label.setText("所有快捷设施都已录入图例库")
+            return
+        if len(self.library) + len(rows) > MAX_LEGEND_ROWS:
+            self.tool_label.setText("图例库数量超出上限，请先移除部分图例")
+            return
+        if self.write_library(self.library + rows):
+            self.library.extend(rows)
+            self.refresh_library_choices(rows[-1]["id"])
+            self.tool_label.setText(f"已将 {len(rows)} 个快捷设施录入图例库")
+
+    def add_all_library_to_legend(self):
+        if not self.library:
+            self.tool_label.setText("请先录入图例库，可使用“一键添加所有快捷设施”")
+            return
+        existing = {row.get("id") for row in self.doc["legend"]}
+        rows = [copy.deepcopy(row) for row in self.library if row["id"] not in existing]
         if len(self.doc["legend"]) + len(rows) > MAX_LEGEND_ROWS:
             self.tool_label.setText("图例数量超出上限，请先移除部分图例")
             return
         self.finish_transform()
         previous_count = len(self.doc["legend"])
         self.doc["legend"].extend(rows)
+        self.doc["show_legend"] = True
+        self.show_legend.blockSignals(True)
+        self.show_legend.setChecked(True)
+        self.show_legend.blockSignals(False)
         self.refresh_legend(previous_count)
-        self.commit()
-
-    def place_all_legends(self):
-        rows = self.doc["legend"]
-        if not rows:
-            self.tool_label.setText("请先添加图纸图例")
-            return
-        layer = next(layer for layer in self.doc["layers"] if layer["id"] == self.active_layer)
-        if layer["locked"] or not layer["visible"]:
-            self.tool_label.setText("当前图层已锁定或隐藏，请切换图层后放置")
-            return
-        self.finish_transform()
-        columns = math.ceil(math.sqrt(len(rows) * PAPER.width() / PAPER.height()))
-        lines = math.ceil(len(rows) / columns)
-        cell_w, cell_h = (PAPER.width() - 80) / columns, (PAPER.height() - 80) / lines
-        items = []
-        for index, row in enumerate(rows):
-            if row["kind"] == "custom":
-                width, height = row["width"], row["height"]
-            else:
-                width, height = FACILITY_SIZES[row["kind"]]
-            scale = min(1, (cell_w - 12) / width, (cell_h - 12) / height)
-            w, h = width * scale, height * scale
-            x = 40 + index % columns * cell_w + (cell_w - w) / 2
-            y = 40 + index // columns * cell_h + (cell_h - h) / 2
-            if row["kind"] == "custom":
-                children = copy.deepcopy(row["items"])
-                for child in children:
-                    renew_ids(child)
-                data = element("group", x, y, w, h, row["text"], children=children,
-                               base_w=width, base_h=height, layer=self.active_layer)
-            else:
-                data = self.styled_element(row["kind"], x, y, w, h)
-                data["layer"] = self.active_layer
-            items.append(data)
-        try:
-            validate_items(self.doc["items"] + items)
-        except (ValueError, TypeError, KeyError) as exc:
-            QMessageBox.warning(self, "无法添加图例至画布", str(exc))
-            return
-        self.doc["items"].extend(items)
-        self.set_tool("select")
-        self.rebuild([d["id"] for d in items])
+        box = self.legend_box
+        box.prepareGeometryChange()
+        box.data.update(w=min(box.data["w"], PAPER.width() - 88), h=min(box.data["h"], PAPER.height() - 88), angle=0)
+        box.data.update(x=PAPER.right() - 44 - box.data["w"], y=44)
+        box.setPos(box.data["x"], box.data["y"])
+        box.setRotation(0)
+        box.update()
         self.commit()
 
     def edit_legend(self, *_):
@@ -4000,7 +4032,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("2.6")
+    app.setApplicationVersion("2.7")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。
