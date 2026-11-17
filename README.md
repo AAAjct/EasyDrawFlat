@@ -1,0 +1,93 @@
+# EasyDrawFlat
+
+一款全中文 Windows 平面图绘制工具，用来画房间布局、摆放家具、添加文字和图例。
+
+**由 gpt6.1sol 制作。**
+
+[下载 2.6 版](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 Windows 程序](https://github.com/AAAjct/EasyDrawFlat/releases/download/v2.6/EasyDrawFlat.exe)
+
+![EasyDrawFlat 主界面](docs/images/main.png)
+
+## 2.6 有什么新功能
+
+- **椭圆工具**：拖动绘制椭圆，支持填色、描边和缩放。
+- **更方便的选色**：参考 PS 的色板和色相条，支持 RGB、色相/饱和度/明度、十六进制色值、常用色和最近用色。
+- **图层与组合**：按类别整理物体，图层可改名、排序、隐藏和锁定；按住层内物体拖动，可改变遮挡顺序或移入别的图层。选中多个物体后右键组合，也可拆分；一个组合按一个物体操作。
+- **134 种中文设施**：卧室、客厅、餐厨、卫浴、办公教学、建筑构件、公共及室外设施，支持分类和关键词搜索，例如“沙发”“马桶”“消防”。
+- **独立设施库窗口**：显示在任务栏，可最小化、最大化、关闭，能够放在一旁继续画图。把图案拖到左侧“预制设施”区域即可添加快捷方式，重启后保留，右键可移除。
+- **更简洁、更轻量**：属性、图层与组、图例分开显示。复用画布对象，减少重绘和图标生成；限制撤销快照占用。Windows 单文件程序约 26 MB，较 2.5 的约 47 MB 减少约 44%。
+
+![中文预制设施库](docs/images/facilities.png)
+
+![颜色选择面板](docs/images/colors.png)
+
+## 开始使用
+
+1. 在 [Releases](https://github.com/AAAjct/EasyDrawFlat/releases/latest) 下载 `EasyDrawFlat.exe`，双击运行，无需安装 Python。
+2. 在左侧选择工具，拖动绘制图形；打开设施库，双击设施后在画布上单击放置。长按再拖动可调整设施大小。
+3. 使用右侧“图层与组”整理内容。框选多个物体，右键选择“组合”或“拆分组合”。跨图层组合会归入所选物体中最上方物体所在的图层。
+4. 保存为 `.edf`，下次可继续编辑；也可以导出 PNG、JPG 或 SVG。
+
+图层从上往下叠放；隐藏层不导出，锁定层可显示但不能编辑。删除图层会同时删除该层全部物体，误删可用 Ctrl+Z 撤销。删除最后一层后会留下一个空白默认层。设施库快捷方式与最近颜色保存在本机，不影响图纸文件。
+
+图例页可“一键添加所有快捷设施”（重复图案自动跳过），再用“一键添加所有图例至画布”将图案整齐排入画布，保留为可编辑物体。
+
+支持多图纸选项卡、跨图纸复制粘贴、撤销重做、钢笔曲线、锚点编辑、文字标注、图例、网格吸附，以及批量保存和导出。可以把 `.edf` 文件拖到软件窗口或程序图标上打开。
+
+### 常用操作
+
+| 操作 | 快捷键 / 鼠标 |
+| --- | --- |
+| 选择 / 方框 / 椭圆 | V / R / O |
+| 钢笔 / 文字 | P / T |
+| 组合 / 拆分 | Ctrl+G / Ctrl+Shift+G |
+| 移动、缩放、旋转所选物体 | Ctrl+T，拖动控制框 |
+| 撤销 / 重做 | Ctrl+Z / Ctrl+Y |
+| 保存 / 打开 / 导出 | Ctrl+S / Ctrl+O / Ctrl+E |
+| 复制粘贴 / 直接复制一份 | Ctrl+C、Ctrl+V / Ctrl+D |
+| 临时框选 / 右键菜单 | 右键拖动 / 右键单击 |
+| 移动物体 / 平移视野 | 中键拖动 / Ctrl+中键拖动 |
+| 缩放视野 / 恢复全图 | Ctrl+滚轮 / Ctrl+0 |
+
+更多操作可在软件的“更多 → 快捷键一览”查看。旧版 `.edf` 可直接打开；新增的图层和组合请使用 2.6 或更新版本编辑。
+
+本工具用于布局示意，画布为 1400×900 像素，不是建筑测量或施工制图软件。
+
+## 从源码运行
+
+推荐 Python 3.11 或更新版本。在项目目录执行：
+
+```powershell
+python -m pip install -r requirements.txt
+python main.py
+```
+
+构建 Windows 单文件程序：
+
+```powershell
+python -m pip install pyinstaller
+python build.py
+```
+
+程序生成在 `dist/v2.6/EasyDrawFlat.exe`。运行验证：
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+## 项目结构
+
+```text
+main.py              界面、绘图、图层、组合和图纸读写
+color_picker.py      颜色选择面板
+facilities.py        中文设施目录与矢量图案
+assets/              界面图标
+build.py             Windows 构建入口
+windows.spec         精简打包配置
+version_info.txt     Windows 版本信息
+requirements.txt     源码运行依赖
+tests/               功能回归测试与截图脚本
+docs/images/         README 软件截图
+```
+
+基于 Python 和 PySide6 开发。仓库保留源码、测试和说明图片，Windows 程序在 Releases 下载。

@@ -1,0 +1,10 @@
+__pycache__/
+build/
+dist/
+*.spec
+!windows.spec
+*.zip
+validation/process-id.txt
+validation/
+方案/
+EasyDrawFlat.ico.bak
