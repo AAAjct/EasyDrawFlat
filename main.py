@@ -37,7 +37,7 @@ NAMES = {"select": "物体选择", "anchor": "锚点选择", "erase": "删除框
          "brush": "画笔", "pen": "钢笔", "fill": "填充", "path": "路径",
          "door": "门", "window": "窗", "stairs": "楼梯", "bed": "床",
          "sofa": "沙发", "table": "桌子", "wardrobe": "衣柜", "cabinet": "储物柜", "triangle": "三角标记",
-         "ellipse": "椭圆", "group": "组合", "legend_box": "图例框"}
+         "ellipse": "椭圆", "rounded_rect": "圆角矩形", "group": "组合", "legend_box": "图例框"}
 NAMES.update({key: row["name"] for key, row in FACILITIES.items()})
 LEGEND_HEADER_HEIGHT = 52
 LEGEND_ROW_HEIGHT = 43
@@ -50,7 +50,7 @@ SYMBOLS = list(FACILITY_SIZES)
 FACILITY_SIZES.update({key: (row["width"], row["height"]) for key, row in FACILITIES.items()})
 TOOL_KEYS = {"select": "V", "anchor": "U", "line": "L", "room": "R", "brush": "B", "pen": "P",
              "fill": "G", "text": "T", "erase": "E", "door": "D", "window": "W",
-             "stairs": "S", "bed": "F", "sofa": "C", "table": "A", "wardrobe": "H", "cabinet": "K", "arrow": "N", "ellipse": "O"}
+             "stairs": "S", "bed": "F", "sofa": "C", "table": "A", "wardrobe": "H", "cabinet": "K", "arrow": "N", "ellipse": "O", "rounded_rect": "J"}
 
 
 def symbol_path(kind, w, h):
@@ -64,6 +64,9 @@ def symbol_path(kind, w, h):
     r = QRectF(0, 0, w, h)
     if kind == "ellipse":
         p.addEllipse(r)
+    elif kind == "rounded_rect":
+        radius = min(w, h) * .18
+        p.addRoundedRect(r, radius, radius)
     if kind in ("room", "window", "stairs", "bed", "sofa", "table", "wardrobe", "cabinet"):
         p.addRect(r)
     if kind == "window":
@@ -632,11 +635,11 @@ class PlanItem(QGraphicsObject):
             if d["text"]:
                 outline.addRect(line_label_rect(d))
             return outline
-        if d["kind"] in ("path", "ellipse"):
-            path = path_geometry(d) if d["kind"] == "path" else symbol_path("ellipse", d["w"], d["h"])
+        if d["kind"] in ("path", "ellipse", "rounded_rect"):
+            path = path_geometry(d) if d["kind"] == "path" else symbol_path(d["kind"], d["w"], d["h"])
             s = QPainterPathStroker()
             s.setWidth(max(12, d["stroke"]))
-            return s.createStroke(path).united(path) if d["kind"] == "ellipse" or d["closed"] else s.createStroke(path)
+            return s.createStroke(path).united(path) if d["kind"] != "path" or d["closed"] else s.createStroke(path)
         if d["kind"] == "room":
             if d.get("fill"):
                 path.addRect(QRectF(0, 0, d["w"], d["h"]))
@@ -1055,7 +1058,7 @@ class PlanView(QGraphicsView):
                 self.pen_handles.append((pos, pos))
                 self.pen_dragging = True
                 self.path_preview()
-        elif w.tool in ("line", "room", "ellipse", "erase", "arrow"):
+        elif w.tool in ("line", "room", "ellipse", "rounded_rect", "erase", "arrow"):
             self.start = pos
         elif w.tool == "text":
             text, ok = QInputDialog.getMultiLineText(w, "添加文字", "标注内容：")
@@ -1440,8 +1443,10 @@ class PlanView(QGraphicsView):
             pen = QPen(QColor("#ce6258" if self.window.tool == "erase" else "#22846e"), 2, Qt.PenStyle.DashLine)
             if self.window.tool in ("line", "arrow"):
                 self.preview = self.scene().addLine(self.start.x(), self.start.y(), pos.x(), pos.y(), pen)
-            elif self.window.tool == "ellipse":
-                self.preview = self.scene().addEllipse(QRectF(self.start, pos).normalized(), pen)
+            elif self.window.tool in ("ellipse", "rounded_rect"):
+                rect = QRectF(self.start, pos).normalized()
+                self.preview = self.scene().addPath(symbol_path(self.window.tool, rect.width(), rect.height()), pen)
+                self.preview.setPos(rect.topLeft())
             else:
                 self.preview = self.scene().addRect(QRectF(self.start, pos).normalized(), pen)
         else:
@@ -1543,7 +1548,7 @@ class PlanView(QGraphicsView):
             return
         if self.window.tool == "erase":
             self.window.erase_rect(QRectF(start, pos).normalized())
-        elif self.window.tool in ("room", "ellipse"):
+        elif self.window.tool in ("room", "ellipse", "rounded_rect"):
             r = QRectF(start, pos).normalized()
             if r.width() < (40 if self.window.tool == "room" else 1) or r.height() < (40 if self.window.tool == "room" else 1):
                 return
@@ -1924,7 +1929,7 @@ class MainWindow(QMainWindow):
         tools.setSpacing(4)
         self.tool_groups = []
         self.tool_columns = 0
-        for title, kinds in [("绘图工具", ("select", "anchor", "line", "room", "ellipse", "brush", "pen", "fill", "text", "arrow", "erase"))]:
+        for title, kinds in [("绘图工具", ("select", "anchor", "line", "room", "ellipse", "rounded_rect", "brush", "pen", "fill", "text", "arrow", "erase"))]:
             if self.tool_groups:
                 tools.addSpacing(12)
             tools.addWidget(QLabel(title))
@@ -1999,12 +2004,13 @@ class MainWindow(QMainWindow):
         form.setColumnStretch(1, 1)
         form.setColumnStretch(3, 1)
         self.fields = {}
-        for idx, (key, label) in enumerate([("text", "标注"), ("x", "水平 X"), ("y", "垂直 Y"),
+        for idx, (key, label) in enumerate([("name", "对象名"), ("text", "标注"), ("x", "水平 X"), ("y", "垂直 Y"),
                            ("w", "宽 / X"), ("h", "高 / Y"), ("angle", "角度"),
                            ("stroke", "线宽"), ("font", "字号")]):
-            if key == "text":
+            is_text = key in ("name", "text")
+            if is_text:
                 field = QLineEdit()
-                field.textEdited.connect(lambda value: self.preview_property("text", value))
+                field.textEdited.connect(lambda value, field_key=key: self.preview_property(field_key, value))
             else:
                 field = QDoubleSpinBox()
                 minimum = -10000 if key in ("x", "y", "w", "h", "angle") else 1
@@ -2017,16 +2023,16 @@ class MainWindow(QMainWindow):
             field.setMinimumWidth(0)
             field.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             self.fields[key] = field
-            row, column = (0, 0) if idx == 0 else (1 + (idx - 1) // 2, ((idx - 1) % 2) * 2)
+            row, column = (idx, 0) if is_text else (idx // 2 + 1, (idx % 2) * 2)
             form.addWidget(QLabel(label), row, column)
-            form.addWidget(field, row, column + 1, 1, 3 if idx == 0 else 1)
+            form.addWidget(field, row, column + 1, 1, 3 if is_text else 1)
         self.writing = QComboBox()
         self.writing.addItem("横排", "horizontal")
         self.writing.addItem("竖排", "vertical")
         self.writing.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.writing.activated.connect(self.change_writing)
-        form.addWidget(QLabel("方向"), 4, 2)
-        form.addWidget(self.writing, 4, 3)
+        form.addWidget(QLabel("方向"), 5, 2)
+        form.addWidget(self.writing, 5, 3)
         panel.addWidget(self.props)
         actions = QHBoxLayout()
         actions.addWidget(self.button("复制", self.duplicate, shortcut="Ctrl+D"))
@@ -2173,7 +2179,7 @@ class MainWindow(QMainWindow):
         hint.setWordWrap(True)
         hint.setObjectName("selectionCaption")
         layout.addWidget(hint)
-        self.side_tabs.addTab(page, "图层与组")
+        self.side_tabs.addTab(page, "图层")
         self.layer_tree_dirty = True
         self.changing_layer_checkbox = False
         self.side_tabs.currentChanged.connect(lambda index: self.refresh_layers() if index == 1 else None)
@@ -2184,7 +2190,7 @@ class MainWindow(QMainWindow):
             return
         selected = {item.data["id"] for item in self.scene.selectedItems()}
         def object_key(data):
-            return (data["id"], data["kind"], data["text"], data.get("layer"), data.get("stack"),
+            return (data["id"], data["kind"], data["text"], data.get("name"), data.get("layer"), data.get("stack"),
                     tuple(object_key(child) for child in data.get("children", [])))
         signature = (tuple((layer["id"], layer["name"], layer["visible"], layer["locked"]) for layer in self.doc["layers"]),
                      tuple(object_key(data) for data in self.doc["items"]))
@@ -2200,7 +2206,7 @@ class MainWindow(QMainWindow):
         self.layer_tree.clear()
         def add_objects(parent, items, root_id=None):
             for data in reversed(items):
-                name = data["text"] or NAMES[data["kind"]]
+                name = data.get("name", "").strip() or data["text"] or NAMES[data["kind"]]
                 if data["kind"] == "group":
                     name += f"（{len(data['children'])} 项）"
                 child = QTreeWidgetItem(parent, [name])
@@ -2271,10 +2277,15 @@ class MainWindow(QMainWindow):
             if ok and name.strip():
                 layer["name"] = name.strip()[:100]
                 self.commit()
-        else:
+        elif node.parent() is not None and node.parent().parent() is None:
             item = next((i for i in self.scene.items() if isinstance(i, PlanItem) and i.data["id"] == identity), None)
             if item and item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable:
-                self.edit_text(item)
+                data = item.data
+                name, ok = QInputDialog.getText(self, "对象改名", "对象名：", text=data.get("name", ""))
+                if ok:
+                    data["name"] = name.strip()
+                    QTimer.singleShot(0, self.layer_tree, self.commit)
+                    self.selection_changed()
 
     def new_layer(self):
         name, ok = QInputDialog.getText(self, "新建图层", "名称：", text=f"图层 {len(self.doc['layers']) + 1}")
@@ -2645,7 +2656,9 @@ class MainWindow(QMainWindow):
         if kind != self.tool:
             self.selected_anchors.clear()
         self.tool = kind
-        hint = {"erase": " · 拖框删除内部线段", "line": " · 拖动绘制", "room": " · 拖动绘制", "ellipse": " · 拖动绘制椭圆",
+        hint = {"erase": " · 拖框裁剪所选线段、方框或路径，未选中时裁剪全部可编辑对象",
+                "line": " · 拖动绘制", "room": " · 拖动绘制", "ellipse": " · 拖动绘制椭圆",
+                "rounded_rect": " · 拖动绘制圆角矩形",
                 "brush": " · 按住左键自由绘制", "pen": " · 单击建点，拖动拉出曲线手柄",
                 "fill": " · 点击封闭图形填色"}.get(kind, "")
         if kind in FACILITY_SIZES:
@@ -2811,7 +2824,7 @@ class MainWindow(QMainWindow):
     def add(self, data):
         layer = next(layer for layer in self.doc["layers"] if layer["id"] == self.active_layer)
         if layer["locked"] or not layer["visible"]:
-            self.tool_label.setText("当前图层已锁定或隐藏，请在“图层与组”中切换图层")
+            self.tool_label.setText("当前图层已锁定或隐藏，请在“图层”中切换图层")
             return False
         data["layer"] = self.active_layer
         self.doc["items"].append(data)
@@ -2959,7 +2972,7 @@ class MainWindow(QMainWindow):
     def can_fill(data):
         if data["kind"] == "group":
             return any(MainWindow.can_fill(child) for child in data["children"])
-        return (data["kind"] in FACILITIES or data["kind"] in ("ellipse", "bed", "sofa", "table", "window", "triangle", "wardrobe", "cabinet", "legend_box", "text") or
+        return (data["kind"] in FACILITIES or data["kind"] in ("ellipse", "rounded_rect", "bed", "sofa", "table", "window", "triangle", "wardrobe", "cabinet", "legend_box", "text") or
                 data["kind"] == "room" and "walls" not in data or
                 data["kind"] == "path" and data["closed"])
 
@@ -3013,8 +3026,8 @@ class MainWindow(QMainWindow):
                 continue
             d = item.data
             local = item.mapFromScene(pos)
-            if d["kind"] == "ellipse":
-                contains = symbol_path("ellipse", d["w"], d["h"]).contains(local)
+            if d["kind"] in ("ellipse", "rounded_rect"):
+                contains = symbol_path(d["kind"], d["w"], d["h"]).contains(local)
             elif d["kind"] == "path" and d["closed"]:
                 contains = path_geometry(d).contains(local)
             elif self.can_fill(d):
@@ -3224,8 +3237,11 @@ class MainWindow(QMainWindow):
             self.loading = True
             self.writing.setCurrentIndex(int(data.get("writing") == "vertical"))
             for key, field in self.fields.items():
-                if key == "text":
-                    field.setText(selected[0].data[key])
+                if key == "name":
+                    field.setText(data.get(key, ""))
+                    field.setPlaceholderText(data["text"] or NAMES[data["kind"]])
+                elif key == "text":
+                    field.setText(data[key])
                 else:
                     if key in ("w", "h"):
                         field.setMinimum(-10000 if data["kind"] == "line" else MIN_SIZE)
@@ -3245,7 +3261,7 @@ class MainWindow(QMainWindow):
         if key in ("w", "h") and data["kind"] != "line":
             if value < MIN_SIZE:
                 return
-        if data.get(key, "horizontal") == value:
+        if data.get(key, "" if key == "name" else "horizontal") == value:
             return
         if self.transform_overlay is not None:
             self.loading = True
@@ -3359,10 +3375,13 @@ class MainWindow(QMainWindow):
     def erase_rect(self, rect):
         if rect.width() <= 0 or rect.height() <= 0:
             return
+        selected = {item.data["id"] for item in self.scene.selectedItems()}
+        keep_selected = selected.copy()
         result, changed = [], False
         for data in self.doc["items"]:
             layer = next(layer for layer in self.doc["layers"] if layer["id"] == data["layer"])
-            if data["kind"] not in ("line", "room", "path") or not layer["visible"] or layer["locked"]:
+            if ((selected and data["id"] not in selected) or data["kind"] not in ("line", "room", "path")
+                    or not layer["visible"] or layer["locked"]):
                 result.append(data)
                 continue
             transform = item_transform(data)
@@ -3403,9 +3422,11 @@ class MainWindow(QMainWindow):
                     piece.update(kind="line", id=uuid.uuid4().hex, x=a.x(), y=a.y(), w=b.x() - a.x(),
                                  h=b.y() - a.y(), angle=0, text=data["text"] if idx == 0 else "")
                     result.append(piece)
+                    if data["id"] in selected:
+                        keep_selected.add(piece["id"])
         if changed:
             self.doc["items"] = result
-            self.rebuild()
+            self.rebuild(keep_selected)
             self.commit()
 
     def duplicate(self):
@@ -3939,6 +3960,8 @@ def validate_items(items, *, legend_box=False, _depth=0, _ids=None, _budget=None
             raise ValueError("物体叠放顺序无效")
         if not isinstance(d["text"], str) or not isinstance(d["color"], str) or not QColor(d["color"]).isValid():
             raise ValueError("图形文字或颜色无效")
+        if "name" in d and not isinstance(d["name"], str):
+            raise ValueError("对象名无效")
         if "writing" in d and d["writing"] not in ("horizontal", "vertical"):
             raise ValueError("文字方向无效")
         for key in ("x", "y", "w", "h", "angle", "stroke", "font"):
@@ -4123,7 +4146,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("1.0")
+    app.setApplicationVersion("1.1")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

@@ -98,6 +98,73 @@ class Version27Test(unittest.TestCase):
             second.close()
             second.deleteLater()
 
+    def test_rounded_rectangle_and_object_name_roundtrip_independently_of_annotation(self):
+        w = self.w
+        w.fit()
+        QTest.keyClick(w.view, Qt.Key.Key_J)
+        self.assertEqual(w.tool, "rounded_rect")
+        start = w.view.mapFromScene(QPointF(100, 100))
+        end = w.view.mapFromScene(QPointF(300, 240))
+        QTest.mousePress(w.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(w.view.viewport(), end)
+        QTest.mouseRelease(w.view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        item, = w.doc["items"]
+        self.assertEqual((item["kind"], item["w"], item["h"]), ("rounded_rect", 200, 140))
+        self.assertFalse(w.fill_at(QPointF(101, 101)))
+        self.assertTrue(w.fill_at(QPointF(200, 170)))
+        w.preview_property("text", "画布标注")
+        w.finish_property_preview()
+        name = w.fields["name"]
+        name.setFocus()
+        QTest.keyClicks(name, "West box")
+        QTest.keyClick(name, Qt.Key.Key_Return)
+        self.assertEqual(w.side_tabs.tabText(1), "图层")
+        w.side_tabs.setCurrentIndex(1)
+        self.assertEqual(w.layer_tree.topLevelItem(0).child(0).text(0), "West box")
+        self.assertEqual(item["text"], "画布标注")
+        path = Path(self.tmp.name) / "圆角.edf"
+        w.save_to(str(path))
+        self.assertEqual(load_document(path)["items"][0], item)
+        w.undo()
+        self.assertEqual(w.layer_tree.topLevelItem(0).child(0).text(0), "画布标注")
+
+    def test_erase_scopes_overlapping_objects_to_selection_and_keeps_selection_after_cut(self):
+        w = self.w
+        a = element("room", 100, 200, 300, 200, name="A")
+        b = element("room", 200, 200, 300, 240, name="B")
+        c = element("line", 100, 200, 400, 0, name="C")
+        w.doc["items"] = [a, b, c]
+        w.reset_document()
+        w.fit()
+        start = w.view.mapFromScene(QPointF(260, 160))
+        end = w.view.mapFromScene(QPointF(340, 240))
+
+        def cut(selected):
+            w.rebuild(selected)
+            w.set_tool("erase")
+            QTest.mousePress(w.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+            QTest.mouseMove(w.view.viewport(), end)
+            QTest.mouseRelease(w.view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+
+        cut([a["id"]])
+        self.assertIn("walls", w.doc["items"][0])
+        self.assertEqual(w.doc["items"][1:], [b, c])
+        self.assertEqual([i.data["id"] for i in w.scene.selectedItems()], [a["id"]])
+        w.undo()
+        self.assertEqual(w.doc["items"], [a, b, c])
+
+        cut([a["id"], c["id"]])
+        self.assertIn("walls", w.doc["items"][0])
+        self.assertEqual(w.doc["items"][1], b)
+        self.assertEqual([i["kind"] for i in w.doc["items"][2:]], ["line", "line"])
+        self.assertEqual({i.data.get("name") for i in w.scene.selectedItems()}, {"A", "C"})
+        w.undo()
+
+        cut([])
+        self.assertTrue(all("walls" in i for i in w.doc["items"][:2]))
+        self.assertEqual(len(w.doc["items"]), 4)
+        self.assertEqual(w.scene.selectedItems(), [])
+
     def test_library_search_chinese_full_pinyin_initials_and_empty_results(self):
         w = self.w
         w.facility_shortcuts = [search_facilities("三人沙发")[0], search_facilities("圆餐桌")[0]]

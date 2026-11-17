@@ -516,11 +516,12 @@ class DrawingTest(unittest.TestCase):
             self.assertEqual(w.tool, tool)
         QTest.keyClick(w.view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
         self.assertEqual(len(w.scene.selectedItems()), 2)
+        tool_before_typing = w.tool
         w.title_edit.setFocus()
         w.title_edit.selectAll()
         QTest.keyClicks(w.title_edit, "vbp")
         self.assertEqual(w.title_edit.text(), "vbp")
-        self.assertEqual(w.tool, "ellipse")
+        self.assertEqual(w.tool, tool_before_typing)
 
     def test_toolbar_edits_selection_colors_and_width(self):
         from PySide6.QtGui import QColor
