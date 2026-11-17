@@ -8,8 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import Qt, QPointF, QPoint, QEvent
-from PySide6.QtGui import QMouseEvent, QDragEnterEvent, QDropEvent, QImage
+from PySide6.QtCore import Qt, QPointF, QPoint, QRectF, QEvent
+from PySide6.QtGui import QMouseEvent, QDragEnterEvent, QDropEvent, QImage, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QPushButton
 from main import create_app, MainWindow, FACILITY_MIME, element, load_document
@@ -135,6 +136,7 @@ class Version27Test(unittest.TestCase):
         c = element("line", 100, 200, 400, 0, name="C")
         w.doc["items"] = [a, b, c]
         w.reset_document()
+        baseline = copy.deepcopy(w.doc["items"])
         w.fit()
         start = w.view.mapFromScene(QPointF(260, 160))
         end = w.view.mapFromScene(QPointF(340, 240))
@@ -147,23 +149,71 @@ class Version27Test(unittest.TestCase):
             QTest.mouseRelease(w.view.viewport(), Qt.MouseButton.LeftButton, pos=end)
 
         cut([a["id"]])
-        self.assertIn("walls", w.doc["items"][0])
+        self.assertIn("cuts", w.doc["items"][0])
         self.assertEqual(w.doc["items"][1:], [b, c])
         self.assertEqual([i.data["id"] for i in w.scene.selectedItems()], [a["id"]])
         w.undo()
-        self.assertEqual(w.doc["items"], [a, b, c])
+        self.assertEqual(w.doc["items"], baseline)
 
         cut([a["id"], c["id"]])
-        self.assertIn("walls", w.doc["items"][0])
+        self.assertIn("cuts", w.doc["items"][0])
         self.assertEqual(w.doc["items"][1], b)
-        self.assertEqual([i["kind"] for i in w.doc["items"][2:]], ["line", "line"])
+        self.assertIn("cuts", w.doc["items"][2])
         self.assertEqual({i.data.get("name") for i in w.scene.selectedItems()}, {"A", "C"})
         w.undo()
 
         cut([])
-        self.assertTrue(all("walls" in i for i in w.doc["items"][:2]))
-        self.assertEqual(len(w.doc["items"]), 4)
+        self.assertTrue(all("cuts" in i for i in w.doc["items"]))
+        self.assertEqual(len(w.doc["items"]), 3)
         self.assertEqual(w.scene.selectedItems(), [])
+
+    def test_erase_partial_fill_facility_text_and_group_survives_export_and_split(self):
+        w = self.w
+        w.add(element("rounded_rect", 100, 100, 220, 160, fill="#ff0000"))
+        w.add(element("bed", 320, 120, 100, 140, fill="#00ff00"))
+        w.add(element("text", 320, 270, 160, 60, "TEST"))
+        w.select_all()
+        w.group_selection()
+        w.erase_rect(QRectF(180, 145, 200, 190))
+
+        def png_pixels(name):
+            path = Path(self.tmp.name) / (name + ".png")
+            w.export_to(path)
+            return QImage(str(path))
+
+        clipped = png_pixels("组合擦除")
+        self.assertEqual(clipped.pixelColor(240, 400).name(), "#ff0000")
+        self.assertEqual(clipped.pixelColor(460, 400).name(), "#ffffff")
+        self.assertEqual(clipped.pixelColor(800, 400).name(), "#00ff00")
+        self.assertEqual(clipped.pixelColor(700, 400).name(), "#ffffff")
+
+        svg_path = Path(self.tmp.name) / "组合擦除.svg"
+        w.export_to(svg_path)
+        svg = QSvgRenderer(str(svg_path))
+        self.assertTrue(svg.isValid())
+        rendered = QImage(2800, 1800, QImage.Format.Format_RGB32)
+        rendered.fill(Qt.GlobalColor.white)
+        painter = QPainter(rendered)
+        svg.render(painter)
+        painter.end()
+        for x in (240, 460, 700, 800):
+            self.assertEqual(rendered.pixelColor(x, 400), clipped.pixelColor(x, 400))
+
+        w.ungroup_selection()
+        self.assertEqual(len(w.doc["items"]), 3)
+        self.assertTrue(all(item["cuts"] for item in w.doc["items"]))
+        self.assertEqual(png_pixels("拆分后"), clipped)
+        path = Path(self.tmp.name) / "擦除.edf"
+        w.save_to(str(path))
+        self.assertEqual(load_document(path)["items"], w.doc["items"])
+
+    def test_erase_fully_covered_facility_removes_it_and_can_be_undone(self):
+        w = self.w
+        w.add(element("bed", 150, 100, 100, 140))
+        w.erase_rect(QRectF(100, 50, 200, 240))
+        self.assertEqual(w.doc["items"], [])
+        w.undo()
+        self.assertEqual(w.doc["items"][0]["kind"], "bed")
 
     def test_library_search_chinese_full_pinyin_initials_and_empty_results(self):
         w = self.w

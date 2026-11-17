@@ -4,13 +4,16 @@ EasyDrawFlat 是一款全中文 Windows 平面图绘制工具，适合画房间�
 
 **由 gpt6.1sol 制作。**
 
-[下载 EasyDrawFlat 1.1](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 EXE](https://github.com/AAAjct/EasyDrawFlat/releases/download/v1.1/EasyDrawFlat.exe)
+[下载 EasyDrawFlat 1.1.1](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 EXE](https://github.com/AAAjct/EasyDrawFlat/releases/download/v1.1.1/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
 
-## 1.1 有什么新功能
+## 1.1.1 更新
 
-- **按选择裁剪**。先选中一个或多个物体，按 **E** 再拖出删除框，只裁剪框内属于所选物体的部分。比如矩形 A 和 B 重叠，只选 A 时，B 的线条保持原样。没有选中物体时，会裁剪框内所有可编辑的直线、方框和路径。可用 **Ctrl+Z** 撤销。
+- **按选择擦除**。先选中一个或多个物体，按 **E** 再拖出删除框，只擦除框内属于所选物体的部分。没有选中物体时，会擦除框内所有可编辑对象。填充、文字、设施和组合也可以局部擦除。擦除结果随图纸保存，可用 **Ctrl+Z** 撤销。导出 SVG 时，局部擦除的对象以透明位图嵌入。
+- **箭头图标**。箭头工具的图标已与文字垂直居中。
+
+## 1.1 更新
 - **对象名**。在「属性」里给物体起名，方便在「图层」列表里区分同类物体。对象名随图纸保存，画布标注仍可单独编辑。
 - **圆角矩形**。按 **J** 后拖动绘制，支持描边、填充和不透明度。
 
@@ -67,4 +70,4 @@ python build.py
 python -m unittest discover -s tests -v
 ```
 
-EXE 生成在 `dist/v1.1/EasyDrawFlat.exe`。主要代码在 `main.py`，设施库和选色器分别在 `facilities.py` 和 `color_picker.py`，界面截图在 `docs/images/`。
+EXE 生成在 `dist/v1.1.1/EasyDrawFlat.exe`。主要代码在 `main.py`，设施库和选色器分别在 `facilities.py` 和 `color_picker.py`，界面截图在 `docs/images/`。

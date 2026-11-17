@@ -137,9 +137,9 @@ def icon(kind, color=INK):
         p.drawEllipse(QPointF(1, 20), 2, 2)
         p.drawEllipse(QPointF(21, 1), 2, 2)
     elif kind == "arrow":
-        p.drawLine(0, 18, 22, 18)
-        p.drawLine(16, 12, 22, 18)
-        p.drawLine(16, 24, 22, 18)
+        p.drawLine(0, 11, 22, 11)
+        p.drawLine(16, 5, 22, 11)
+        p.drawLine(16, 17, 22, 11)
     elif kind == "text":
         p.setFont(QFont("Segoe UI", 20))
         p.drawText(QRectF(0, -4, 24, 30), Qt.AlignmentFlag.AlignCenter, "T")
@@ -427,7 +427,68 @@ def line_label_rect(data):
     return QRectF(mid.x() + run + gap, mid.y() - height / 2, width, height)
 
 
+def cut_scale(data):
+    return max(1, abs(data["w"])), max(1, abs(data["h"]))
+
+
+def erased_area(data):
+    path = QPainterPath()
+    path.setFillRule(Qt.FillRule.WindingFill)
+    width, height = cut_scale(data)
+    for corners in data.get("cuts", []):
+        points = [QPointF(x * width, y * height) for x, y in corners]
+        # 同向的多边形在重叠处仍然保持擦除。
+        if sum(a.x() * b.y() - b.x() * a.y() for a, b in zip(points, points[1:] + points[:1])) < 0:
+            points.reverse()
+        path.moveTo(points[0])
+        for point in points[1:]:
+            path.lineTo(point)
+        path.closeSubpath()
+    return path
+
+
+def draw_with_cuts(p, data, draw):
+    if not data.get("cuts"):
+        draw(p)
+        return
+    bounds = element_bounds(data)
+    area = QPainterPath()
+    area.addRect(bounds)
+    visible = area.subtracted(erased_area(data))
+    if visible.isEmpty():
+        return
+    if isinstance(p.device(), QSvgGenerator):
+        # Qt 的 SVG 生成器不输出裁剪路径。仅将用过删除框的对象嵌入为透明图片。
+        device_bounds = p.worldTransform().mapRect(bounds)
+        ratio = min(4, 4096 / max(bounds.width(), bounds.height()),
+                    max(device_bounds.width() / bounds.width(), device_bounds.height() / bounds.height()))
+        width = max(1, math.ceil(bounds.width() * ratio))
+        height = max(1, math.ceil(bounds.height() * ratio))
+        image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        local = QPainter(image)
+        local.setRenderHint(QPainter.RenderHint.Antialiasing)
+        local.scale(width / bounds.width(), height / bounds.height())
+        local.translate(-bounds.x(), -bounds.y())
+        local.setClipPath(visible)
+        draw(local)
+        local.end()
+        p.drawImage(bounds, image)
+    else:
+        p.save()
+        p.setClipPath(visible, Qt.ClipOperation.IntersectClip)
+        draw(p)
+        p.restore()
+
+
 def draw_element(p, data, min_stroke=0):
+    if data.get("cuts"):
+        draw_with_cuts(p, data, lambda target: draw_element_opacity(target, data, min_stroke))
+    else:
+        draw_element_opacity(p, data, min_stroke)
+
+
+def draw_element_opacity(p, data, min_stroke):
     opacity = data.get("opacity", 1)
     if opacity == 1:
         draw_element_body(p, data, min_stroke)
@@ -584,29 +645,6 @@ def legend_icon(row):
     return QIcon(pix)
 
 
-def outside_segments(a, b, rect):
-    """返回线段在矩形外的部分；相切的单个点不算删除。"""
-    dx, dy = b.x() - a.x(), b.y() - a.y()
-    enter, leave = 0.0, 1.0
-    for p, q in [(-dx, a.x() - rect.left()), (dx, rect.right() - a.x()),
-                 (-dy, a.y() - rect.top()), (dy, rect.bottom() - a.y())]:
-        if abs(p) < 1e-12:
-            if q < 0:
-                return [(a, b)]
-        elif p < 0:
-            enter = max(enter, q / p)
-        else:
-            leave = min(leave, q / p)
-    if leave - enter <= 1e-9:
-        return [(a, b)]
-    result = []
-    if enter > 1e-9:
-        result.append((a, a + (b - a) * enter))
-    if leave < 1 - 1e-9:
-        result.append((a + (b - a) * leave, b))
-    return result
-
-
 class PlanItem(QGraphicsObject):
     def __init__(self, data, window):
         super().__init__()
@@ -624,6 +662,10 @@ class PlanItem(QGraphicsObject):
         return element_bounds(self.data)
 
     def shape(self):
+        shape = self.uncut_shape()
+        return shape.subtracted(erased_area(self.data)) if self.data.get("cuts") else shape
+
+    def uncut_shape(self):
         d = self.data
         path = QPainterPath()
         if d["kind"] == "line":
@@ -665,7 +707,7 @@ class PlanItem(QGraphicsObject):
             if rows:
                 p.save()
                 p.setOpacity(p.opacity() * d.get("opacity", 1))
-                draw_legend_box(p, d, rows)
+                draw_with_cuts(p, d, lambda target: draw_legend_box(target, d, rows))
                 p.restore()
         else:
             draw_element(p, d)
@@ -2529,6 +2571,13 @@ class MainWindow(QMainWindow):
                 child = copy.deepcopy(original)
                 if "opacity" in data:
                     child["opacity"] = child.get("opacity", 1) * data["opacity"]
+                if data.get("cuts"):
+                    to_child = (item_transform(child) * QTransform().scale(data["w"] / data["base_w"], data["h"] / data["base_h"])).inverted()[0]
+                    parent_w, parent_h = cut_scale(data)
+                    child_w, child_h = cut_scale(child)
+                    for polygon in data["cuts"]:
+                        corners = [to_child.map(QPointF(x * parent_w, y * parent_h)) for x, y in polygon]
+                        child.setdefault("cuts", []).append([[p.x() / child_w, p.y() / child_h] for p in corners])
                 transform = item_transform(child) * parent
                 child.update(x=transform.dx(), y=transform.dy(), angle=0, layer=data["layer"], stack=data.get("stack", 1),
                              affine=[transform.m11(), transform.m12(), transform.m21(), transform.m22()])
@@ -2656,7 +2705,7 @@ class MainWindow(QMainWindow):
         if kind != self.tool:
             self.selected_anchors.clear()
         self.tool = kind
-        hint = {"erase": " · 拖框裁剪所选线段、方框或路径，未选中时裁剪全部可编辑对象",
+        hint = {"erase": " · 拖框擦除所选对象，未选中时擦除框内所有可编辑对象",
                 "line": " · 拖动绘制", "room": " · 拖动绘制", "ellipse": " · 拖动绘制椭圆",
                 "rounded_rect": " · 拖动绘制圆角矩形",
                 "brush": " · 按住左键自由绘制", "pen": " · 单击建点，拖动拉出曲线手柄",
@@ -3026,6 +3075,8 @@ class MainWindow(QMainWindow):
                 continue
             d = item.data
             local = item.mapFromScene(pos)
+            if d.get("cuts") and erased_area(d).contains(local):
+                continue
             if d["kind"] in ("ellipse", "rounded_rect"):
                 contains = symbol_path(d["kind"], d["w"], d["h"]).contains(local)
             elif d["kind"] == "path" and d["closed"]:
@@ -3373,60 +3424,39 @@ class MainWindow(QMainWindow):
         self.shortcut_dialog.raise_()
 
     def erase_rect(self, rect):
-        if rect.width() <= 0 or rect.height() <= 0:
+        if rect.isEmpty():
             return
         selected = {item.data["id"] for item in self.scene.selectedItems()}
-        keep_selected = selected.copy()
-        result, changed = [], False
-        for data in self.doc["items"]:
-            layer = next(layer for layer in self.doc["layers"] if layer["id"] == data["layer"])
-            if ((selected and data["id"] not in selected) or data["kind"] not in ("line", "room", "path")
-                    or not layer["visible"] or layer["locked"]):
-                result.append(data)
+        corners = [rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()]
+        removed = set()
+        changed = False
+        for item in self.scene.items(rect, Qt.ItemSelectionMode.IntersectsItemBoundingRect):
+            if not isinstance(item, PlanItem) or not item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsSelectable:
                 continue
-            transform = item_transform(data)
-            inverse, _ = transform.inverted()
-            if data["kind"] == "room":
-                segments = room_walls(data)
-            elif data["kind"] == "path":
-                segments = []
-                for polygon in path_geometry(data).toSubpathPolygons():
-                    segments.extend(zip(polygon, list(polygon)[1:]))
-            else:
-                segments = [(QPointF(), QPointF(data["w"], data["h"]))]
-            remaining, affected = [], False
-            for a, b in segments:
-                a, b = transform.map(a), transform.map(b)
-                pieces = outside_segments(a, b, rect)
-                affected |= pieces != [(a, b)]
-                remaining.extend(pieces)
-            if not affected:
-                result.append(data)
+            data = item.data
+            if selected and data["id"] not in selected:
+                continue
+            local = [item.mapFromScene(point) for point in corners]
+            eraser = QPainterPath(local[0])
+            for point in local[1:]:
+                eraser.lineTo(point)
+            eraser.closeSubpath()
+            shape = item.shape()
+            if not shape.intersects(eraser):
                 continue
             changed = True
-            if data["kind"] == "room":
-                data = copy.deepcopy(data)
-                data.pop("fill", None)
-                data["walls"] = []
-                for a, b in remaining:
-                    a, b = inverse.map(a), inverse.map(b)
-                    data["walls"].append([a.x() / data["w"], a.y() / data["h"],
-                                          b.x() / data["w"], b.y() / data["h"]])
-                if remaining or data["text"]:
-                    result.append(data)
+            if shape.subtracted(eraser).isEmpty():
+                if item is self.legend_box:
+                    self.doc["show_legend"] = False
+                    data.pop("cuts", None)
+                else:
+                    removed.add(data["id"])
             else:
-                for idx, (a, b) in enumerate(remaining):
-                    piece = copy.deepcopy(data)
-                    for key in ("points", "handles", "edges", "edge_handles", "closed", "fill", "affine"):
-                        piece.pop(key, None)
-                    piece.update(kind="line", id=uuid.uuid4().hex, x=a.x(), y=a.y(), w=b.x() - a.x(),
-                                 h=b.y() - a.y(), angle=0, text=data["text"] if idx == 0 else "")
-                    result.append(piece)
-                    if data["id"] in selected:
-                        keep_selected.add(piece["id"])
+                width, height = cut_scale(data)
+                data.setdefault("cuts", []).append([[p.x() / width, p.y() / height] for p in local])
         if changed:
-            self.doc["items"] = result
-            self.rebuild(keep_selected)
+            self.doc["items"] = [data for data in self.doc["items"] if data["id"] not in removed]
+            self.rebuild(selected - removed)
             self.commit()
 
     def duplicate(self):
@@ -3962,6 +3992,16 @@ def validate_items(items, *, legend_box=False, _depth=0, _ids=None, _budget=None
             raise ValueError("图形文字或颜色无效")
         if "name" in d and not isinstance(d["name"], str):
             raise ValueError("对象名无效")
+        if "cuts" in d:
+            cuts = d["cuts"]
+            if not isinstance(cuts, list) or any(
+                not isinstance(polygon, list) or len(polygon) != 4 or any(
+                    not isinstance(point, list) or len(point) != 2 or any(
+                        type(v) not in (int, float) or not math.isfinite(v) for v in point
+                    ) for point in polygon
+                ) for polygon in cuts
+            ):
+                raise ValueError("删除框区域无效")
         if "writing" in d and d["writing"] not in ("horizontal", "vertical"):
             raise ValueError("文字方向无效")
         for key in ("x", "y", "w", "h", "angle", "stroke", "font"):
@@ -4146,7 +4186,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("1.1")
+    app.setApplicationVersion("1.1.1")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

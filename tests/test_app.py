@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QImage
-from main import create_app, MainWindow, PlanItem, element, load_document, outside_segments
+from main import create_app, MainWindow, PlanItem, element, load_document
 
 
 class DrawingTest(unittest.TestCase):
@@ -310,7 +310,7 @@ class DrawingTest(unittest.TestCase):
             self.assertEqual(w.tabs.count(), 1)
             self.assertEqual(w.doc["title"], "未命名图纸")
 
-    def test_erase_drag_splits_line_and_undo_restores_it(self):
+    def test_erase_drag_cuts_line_and_undo_restores_it(self):
         w = self.w
         w.doc["items"] = [element("line", 100, 200, 400, 0)]
         w.reset_document()
@@ -320,15 +320,18 @@ class DrawingTest(unittest.TestCase):
         QTest.mousePress(w.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
         QTest.mouseMove(w.view.viewport(), end)
         QTest.mouseRelease(w.view.viewport(), Qt.MouseButton.LeftButton, pos=end)
-        self.assertEqual(len(w.doc["items"]), 2)
-        left, right = w.doc["items"]
-        self.assertAlmostEqual(left["x"] + left["w"], 220)
-        self.assertAlmostEqual(right["x"], 340)
-        w.undo()
+        def hit(x):
+            item, = w.scene.items()
+            return item.shape().contains(item.mapFromScene(QPointF(x, 200)))
+
         self.assertEqual(len(w.doc["items"]), 1)
-        self.assertEqual(w.doc["items"][0]["w"], 400)
+        self.assertTrue(hit(160))
+        self.assertFalse(hit(280))
+        self.assertTrue(hit(440))
+        w.undo()
+        self.assertTrue(hit(280))
         w.redo()
-        self.assertEqual(len(w.doc["items"]), 2)
+        self.assertFalse(hit(280))
 
     def test_erase_rotated_room_preserves_label_and_saved_gap(self):
         w = self.w
@@ -339,25 +342,15 @@ class DrawingTest(unittest.TestCase):
         w.erase_rect(QRectF(180, 220, 40, 60))
         room = w.doc["items"][0]
         self.assertEqual(room["text"], "厨房")
-        self.assertEqual(len(room["walls"]), 5)
+        item = next(item for item in w.scene.items() if item.data["kind"] == "room")
+        self.assertFalse(item.shape().contains(item.mapFromScene(QPointF(200, 250))))
+        self.assertTrue(item.shape().contains(item.mapFromScene(QPointF(200, 180))))
         self.assertEqual(w.doc["items"][1]["kind"], "bed")
         with tempfile.TemporaryDirectory() as tmp:
             w.path = str(Path(tmp) / "开口房间.edf")
             self.assertTrue(w.save_file())
             self.assertEqual(load_document(w.path), w.doc)
             w.export_to(Path(tmp) / "开口.svg")
-
-    def test_clip_vertical_diagonal_inside_outside_and_tangent(self):
-        rect = QRectF(10, 10, 20, 20)
-        self.assertEqual(outside_segments(QPointF(15, 15), QPointF(25, 25), rect), [])
-        a, b = QPointF(0, 0), QPointF(5, 5)
-        self.assertEqual(outside_segments(a, b, rect), [(a, b)])
-        self.assertEqual(len(outside_segments(QPointF(20, 0), QPointF(20, 40), rect)), 2)
-        pieces = outside_segments(QPointF(40, 40), QPointF(0, 0), rect)
-        self.assertEqual(pieces[0][1], QPointF(30, 30))
-        self.assertEqual(pieces[1][0], QPointF(10, 10))
-        a, b = QPointF(0, 20), QPointF(20, 0)
-        self.assertEqual(outside_segments(a, b, rect), [(a, b)])
 
     def test_blank_start_has_no_example(self):
         from PySide6.QtWidgets import QPushButton
@@ -409,22 +402,24 @@ class DrawingTest(unittest.TestCase):
         self.assertEqual(len(w.doc["items"]), 2)
         self.assertFalse(w.doc["items"][-1]["closed"])
 
-    def test_fill_room_and_cut_path_preserves_only_outer_lines(self):
+    def test_erase_preserves_uncovered_room_fill_and_open_path(self):
         w = self.w
         w.add(element("room", 100, 100, 300, 200, "厨房"))
         self.assertTrue(w.fill_at(QPointF(150, 150)))
-        self.assertIn("fill", w.doc["items"][0])
         w.erase_rect(QRectF(180, 80, 60, 40))
-        self.assertNotIn("fill", w.doc["items"][0])
-        self.assertFalse(w.fill_at(QPointF(150, 150)))
+        self.assertIn("fill", w.doc["items"][0])
+        self.assertFalse(w.fill_at(QPointF(200, 110)))
+        self.assertTrue(w.fill_at(QPointF(150, 150)))
+
         w.doc["items"] = []
         w.reset_document()
         w.add_path([QPointF(100, 200), QPointF(500, 200)])
         w.erase_rect(QRectF(220, 180, 120, 40))
-        self.assertEqual(len(w.doc["items"]), 2)
-        self.assertTrue(all(d["kind"] == "line" for d in w.doc["items"]))
-        self.assertAlmostEqual(w.doc["items"][0]["w"], 120)
-        self.assertAlmostEqual(w.doc["items"][1]["x"], 340)
+        path, = w.scene.items()
+        self.assertEqual(path.data["kind"], "path")
+        self.assertTrue(path.shape().contains(path.mapFromScene(QPointF(160, 200))))
+        self.assertFalse(path.shape().contains(path.mapFromScene(QPointF(280, 200))))
+        self.assertTrue(path.shape().contains(path.mapFromScene(QPointF(400, 200))))
 
     def test_group_blank_left_drag_and_middle_drag_preserve_selection(self):
         w = self.w
