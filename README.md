@@ -4,9 +4,15 @@ EasyDrawFlat 是一款全中文 Windows 平面图绘制工具，适合画房间�
 
 **由 gpt6.1sol 制作。**
 
-[下载 EasyDrawFlat 1.1.1](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 EXE](https://github.com/AAAjct/EasyDrawFlat/releases/download/v1.1.1/EasyDrawFlat.exe)
+[下载 EasyDrawFlat 1.1.3](https://github.com/AAAjct/EasyDrawFlat/releases/latest) · [直接下载 EXE](https://github.com/AAAjct/EasyDrawFlat/releases/download/v1.1.3/EasyDrawFlat.exe)
 
 ![EasyDrawFlat 主界面](docs/images/main.png)
+
+## 1.1.3 更新
+
+- 画布缩放可继续越过原先的固定范围。按 **Ctrl+0** 可以回到全图视图。
+- 方框工具支持微小拖框。如果吸附后某一边的长度为零，这一边会使用实际拖动距离。
+- 点击色相条任意位置可直接跳到对应颜色，也可按住左键连续拖动选色。
 
 ## 1.1.1 更新
 
@@ -70,4 +76,4 @@ python build.py
 python -m unittest discover -s tests -v
 ```
 
-EXE 生成在 `dist/v1.1.1/EasyDrawFlat.exe`。主要代码在 `main.py`，设施库和选色器分别在 `facilities.py` 和 `color_picker.py`，界面截图在 `docs/images/`。
+EXE 生成在 `dist/v1.1.3/EasyDrawFlat.exe`。主要代码在 `main.py`，设施库和选色器分别在 `facilities.py` 和 `color_picker.py`，界面截图在 `docs/images/`。

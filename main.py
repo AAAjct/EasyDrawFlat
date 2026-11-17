@@ -941,7 +941,7 @@ class PlanScene(QGraphicsScene):
             p.save()
             p.setClipRect(PAPER)
             step = w.grid_step.value()
-            while step * p.worldTransform().m11() < 4:
+            while step < max(PAPER.width(), PAPER.height()) and step * p.worldTransform().m11() < 4:
                 step *= 5
             visible = rect.intersected(PAPER)
             paths = [QPainterPath(), QPainterPath()]
@@ -1001,6 +1001,7 @@ class PlanView(QGraphicsView):
         super().__init__(window.scene)
         self.window = window
         self.start = None
+        self.room_start = None
         self.preview = None
         self.facility_preview = None
         self.facility_press = None
@@ -1102,6 +1103,8 @@ class PlanView(QGraphicsView):
                 self.path_preview()
         elif w.tool in ("line", "room", "ellipse", "rounded_rect", "erase", "arrow"):
             self.start = pos
+            if w.tool == "room":
+                self.room_start = raw
         elif w.tool == "text":
             text, ok = QInputDialog.getMultiLineText(w, "添加文字", "标注内容：")
             if ok and text.strip():
@@ -1489,6 +1492,8 @@ class PlanView(QGraphicsView):
                 rect = QRectF(self.start, pos).normalized()
                 self.preview = self.scene().addPath(symbol_path(self.window.tool, rect.width(), rect.height()), pen)
                 self.preview.setPos(rect.topLeft())
+            elif self.window.tool == "room":
+                self.preview = self.scene().addRect(self.room_rect(raw, pos), pen)
             else:
                 self.preview = self.scene().addRect(QRectF(self.start, pos).normalized(), pen)
         else:
@@ -1583,19 +1588,25 @@ class PlanView(QGraphicsView):
             return
         if self.start is None:
             return super().mouseReleaseEvent(e)
-        pos = self.window.snap(self.mapToScene(e.position().toPoint()))
+        raw = self.mapToScene(e.position().toPoint())
+        pos = self.window.snap(raw)
         start = self.start
+        room = self.room_rect(raw, pos) if self.window.tool == "room" else None
         self.cancel_draw()
+        if room is not None:
+            if not room.isEmpty():
+                self.window.add(self.window.styled_element("room", room.x(), room.y(),
+                                                           max(MIN_SIZE, room.width()), max(MIN_SIZE, room.height()), "房间"))
+            return
         if abs(pos.x() - start.x()) + abs(pos.y() - start.y()) < 10:
             return
         if self.window.tool == "erase":
             self.window.erase_rect(QRectF(start, pos).normalized())
-        elif self.window.tool in ("room", "ellipse", "rounded_rect"):
+        elif self.window.tool in ("ellipse", "rounded_rect"):
             r = QRectF(start, pos).normalized()
-            if r.width() < (40 if self.window.tool == "room" else 1) or r.height() < (40 if self.window.tool == "room" else 1):
+            if r.width() < 1 or r.height() < 1:
                 return
-            self.window.add(self.window.styled_element(self.window.tool, r.x(), r.y(), r.width(), r.height(),
-                                                      "房间" if self.window.tool == "room" else ""))
+            self.window.add(self.window.styled_element(self.window.tool, r.x(), r.y(), r.width(), r.height()))
         elif self.window.tool == "arrow":
             delta = pos - start
             data = self.window.styled_element("arrow", start.x(), start.y(), max(20, math.hypot(delta.x(), delta.y())), 60)
@@ -1603,6 +1614,14 @@ class PlanView(QGraphicsView):
             self.window.add(data)
         else:
             self.window.add(self.window.styled_element("line", start.x(), start.y(), pos.x() - start.x(), pos.y() - start.y()))
+
+    def room_rect(self, raw, snapped):
+        x_collapsed = snapped.x() == self.start.x()
+        y_collapsed = snapped.y() == self.start.y()
+        start = QPointF(self.room_start.x() if x_collapsed else self.start.x(),
+                        self.room_start.y() if y_collapsed else self.start.y())
+        end = QPointF(raw.x() if x_collapsed else snapped.x(), raw.y() if y_collapsed else snapped.y())
+        return QRectF(start, end).normalized()
 
     def cancel_draw(self):
         self.facility_press = None
@@ -1622,6 +1641,7 @@ class PlanView(QGraphicsView):
             item.update()
             self.node_drag = None
         self.start = None
+        self.room_start = None
         self.points = []
         self.pen_handles = []
         self.pen_dragging = False
@@ -3676,10 +3696,14 @@ class MainWindow(QMainWindow):
 
     def zoom(self, factor):
         scale = self.view.transform().m11() * factor
-        if .15 <= scale <= 4:
+        # QGraphicsView uses integer scroll bars and needs an invertible view transform.
+        rect = self.view.sceneRect()
+        if (scale > 0 and scale * max(rect.width(), rect.height()) < 2**31 - 1
+                and QTransform.fromScale(scale, scale).inverted()[1]):
             self.view.scale(factor, factor)
 
     def fit(self):
+        self.view.resetTransform()
         self.view.fitInView(PAPER.adjusted(-30, -30, 30, 30), Qt.AspectRatioMode.KeepAspectRatio)
 
     def confirm_discard(self):
@@ -4186,7 +4210,7 @@ def apply_appearance(app, dark):
 def create_app():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("EasyDrawFlat")
-    app.setApplicationVersion("1.1.1")
+    app.setApplicationVersion("1.1.3")
     app.setStyle("Fusion")
     apply_appearance(app, True)
     # Qt 自带对话框和标准按钮也使用中文。

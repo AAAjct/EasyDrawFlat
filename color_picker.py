@@ -59,6 +59,34 @@ class ColorField(QWidget):
                           max(0., min(1., 1 - event.position().y() / max(1, self.height() - 1))))
 
 
+class HueSlider(QSlider):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setSliderDown(True)
+            self.pick(event.position().y())
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.isSliderDown() and event.buttons() & Qt.MouseButton.LeftButton:
+            self.pick(event.position().y())
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.setSliderDown(False)
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def pick(self, y):
+        fraction = max(0., min(1., y / max(1, self.height() - 1)))
+        self.setValue(round(self.minimum() + fraction * (self.maximum() - self.minimum())))
+
+
 class ColorPickerDialog(QDialog):
     def __init__(self, initial, parent=None, title="选择颜色", recent=()):
         super().__init__(parent)
@@ -72,11 +100,11 @@ class ColorPickerDialog(QDialog):
         self.field = ColorField()
         self.field.changed.connect(self.pick_sv)
         body.addWidget(self.field, 1)
-        self.hue = QSlider(Qt.Orientation.Vertical)
+        self.hue = HueSlider(Qt.Orientation.Vertical)
         self.hue.setRange(0, 359)
         self.hue.setInvertedAppearance(True)
         self.hue.setFixedWidth(26)
-        self.hue.setToolTip("色相")
+        self.hue.setToolTip("点击或拖动色相条选择颜色")
         self.hue.setStyleSheet("QSlider::groove:vertical {width:20px; border:1px solid #888;"
             "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #ff0000,stop:0.167 #ffff00,"
             "stop:0.333 #00ff00,stop:0.5 #00ffff,stop:0.667 #0000ff,stop:0.833 #ff00ff,stop:1 #ff0000);}"

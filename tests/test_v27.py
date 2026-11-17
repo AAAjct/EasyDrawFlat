@@ -167,6 +167,40 @@ class Version27Test(unittest.TestCase):
         self.assertEqual(len(w.doc["items"]), 3)
         self.assertEqual(w.scene.selectedItems(), [])
 
+    def test_zoom_passes_old_limits_and_tiny_room_survives_snap_and_save(self):
+        w = self.w
+        w.fit()
+        fit_scale = w.view.transform().m11()
+        for _ in range(32):
+            w.zoom(1 / 1.15)
+        self.assertLess(w.view.transform().m11(), 0.02)
+        w.fit()
+        self.assertAlmostEqual(w.view.transform().m11(), fit_scale)
+        for _ in range(32):
+            w.zoom(1.15)
+        self.assertGreater(w.view.transform().m11(), 20)
+
+        w.view.centerOn(QPointF(400, 400))
+        w.snap_box.setChecked(True)
+        w.set_tool("room")
+        viewport = w.view.viewport()
+        start = w.view.mapFromScene(QPointF(400, 400))
+        end = start + QPoint(3, 4)
+        raw_start, raw_end = w.view.mapToScene(start), w.view.mapToScene(end)
+        self.assertEqual(w.snap(raw_start), w.snap(raw_end))
+        QTest.mouseClick(viewport, Qt.MouseButton.LeftButton, pos=start)
+        self.assertEqual(w.doc["items"], [])
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(viewport, end)
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, pos=end)
+        room, = w.doc["items"]
+        self.assertEqual(room["kind"], "room")
+        self.assertAlmostEqual(room["w"], raw_end.x() - raw_start.x())
+        self.assertAlmostEqual(room["h"], raw_end.y() - raw_start.y())
+        path = Path(self.tmp.name) / "细小方框.edf"
+        w.save_to(str(path))
+        self.assertEqual(load_document(path)["items"], [room])
+
     def test_erase_partial_fill_facility_text_and_group_survives_export_and_split(self):
         w = self.w
         w.add(element("rounded_rect", 100, 100, 220, 160, fill="#ff0000"))

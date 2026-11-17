@@ -7,7 +7,7 @@ import argparse
 
 ROOT = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description="构建 EasyDrawFlat Windows 程序")
-parser.add_argument("--distpath", type=Path, default=ROOT / "dist" / "v1.1.1", help="程序输出目录")
+parser.add_argument("--distpath", type=Path, default=ROOT / "dist" / "v1.1.3", help="程序输出目录")
 args = parser.parse_args()
 sys.path.insert(0, str(ROOT))
 from main import create_app, icon
